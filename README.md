@@ -1,6 +1,6 @@
 # Roles
 
-Unauthenticated enumerations of IAM Roles in AWS accounts.
+Unauthenticated enumeration of IAM Roles in AWS accounts.
 
 TODO: Update this documentation.
 
