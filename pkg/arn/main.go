@@ -4,31 +4,47 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/ryanjarv/roles/pkg/utils"
+	"strings"
 	"text/template"
 )
 
 type GetArnsInput struct {
-	RolePaths []string
-	Regions   map[string]utils.Info
-	Accounts  map[string]utils.Info
-	ForceScan bool
+	RolePaths    []string
+	Regions      map[string]utils.Info
+	ForceScan    bool
+	AccountsStr  string
+	AccountsPath string
 }
 
-func GetArns(ctx *utils.Context, input *GetArnsInput) (map[string]map[string]utils.Info, error) {
+func GetArns(ctx *utils.Context, input *GetArnsInput) (map[string]utils.Info, error) {
+	var accounts map[string]utils.Info
+
+	if input.AccountsPath != "" {
+		var err error
+		accounts, err = utils.GetInput(input.AccountsPath)
+		if err != nil {
+			ctx.Error.Fatalf("accounts: %s", err)
+		}
+	} else {
+		accounts = map[string]utils.Info{}
+	}
+
+	for _, value := range strings.Split(input.AccountsStr, ",") {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		accounts[value] = utils.Info{}
+	}
+
 	roles, err := utils.GetInput(input.RolePaths...)
 	if err != nil {
 		return nil, fmt.Errorf("getting allRoles: %s", err)
 	}
 
-	result := map[string]map[string]utils.Info{}
-	for account, accountInfo := range input.Accounts {
-		if _, ok := result[account]; !ok {
-			result[account] = map[string]utils.Info{}
-		}
-
-		//if _, ok := result[account]; !ok {
-		//	result[account] = map[string]utils.Info{}
-		//}
+	result := map[string]utils.Info{}
+	for account, accountInfo := range accounts {
+		result[utils.GetRootArn(account)] = accountInfo
 
 		for tmpl, roleInfo := range roles {
 			for region, _ := range input.Regions {
@@ -43,7 +59,7 @@ func GetArns(ctx *utils.Context, input *GetArnsInput) (map[string]map[string]uti
 					ctx.Debug.Printf("account %s has no comment", account)
 				}
 
-				result[account][arn] = utils.Info{
+				result[arn] = utils.Info{
 					Comment: accountInfo.Comment + " - " + roleInfo.Comment,
 				}
 			}
@@ -51,10 +67,6 @@ func GetArns(ctx *utils.Context, input *GetArnsInput) (map[string]map[string]uti
 	}
 
 	return result, nil
-}
-
-func GetRootArn(account string) string {
-	return fmt.Sprintf("arn:aws:iam::%s:root", account)
 }
 
 type roleData struct {

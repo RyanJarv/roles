@@ -205,8 +205,13 @@ func GetInputFromPath(list string) map[string]Info {
 		if value == "" {
 			continue
 		}
+		var comment string
+		if len(p) > 1 {
+			comment = p[1]
+		}
+
 		resp[value] = Info{
-			Comment: strings.Join(p[1:], "#"),
+			Comment: comment,
 		}
 	}
 	return resp
@@ -232,7 +237,6 @@ func Load(name string, account string) (map[string]Info, error) {
 	}
 
 	return all[account], nil
-
 }
 
 func loadAll(name string) (map[string]map[string]Info, error) {
