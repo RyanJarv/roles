@@ -3,7 +3,6 @@ package scanner
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/ryanjarv/roles/pkg/utils"
 	"os"
 	"path/filepath"
@@ -28,7 +27,7 @@ func NewStorage(ctx *utils.Context, name string) (*Storage, error) {
 	storage := &Storage{
 		mux:      sync.Mutex{},
 		name:     name,
-		data:     map[string]map[string]utils.Info{},
+		data:     map[string]bool{},
 		dataPath: dataPath,
 		lockPath: dataPath + ".lock",
 	}
@@ -53,7 +52,7 @@ func NewStorage(ctx *utils.Context, name string) (*Storage, error) {
 
 type Storage struct {
 	mux      sync.Mutex
-	data     map[string]map[string]utils.Info
+	data     map[string]bool
 	name     string
 	dataPath string
 	lockPath string
@@ -97,6 +96,8 @@ func (s *Storage) Save() error {
 	}
 
 	s.mux.Lock()
+	defer s.mux.Unlock()
+
 	data, err := json.Marshal(s.data)
 	if err != nil {
 		return fmt.Errorf("marshalling data: %s", err)
@@ -105,25 +106,27 @@ func (s *Storage) Save() error {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("writing data: %s", err)
 	}
-	s.mux.Unlock()
 
 	return nil
 }
 
-func (s *Storage) Set(principalArn string, info utils.Info) error {
-	parse, err := arn.Parse(principalArn)
-	if err != nil {
-		return fmt.Errorf("parsing arn %s: %s", principalArn, err)
-	}
-
+func (s *Storage) Set(principalArn string, exists bool) {
 	s.mux.Lock()
-	if _, ok := s.data[parse.AccountID]; !ok {
-		s.data[parse.AccountID] = map[string]utils.Info{}
-	}
-	s.data[parse.AccountID][principalArn] = info
+	s.data[principalArn] = exists
 	s.mux.Unlock()
+}
 
-	return nil
+func (s *Storage) GetStatus(principalArn string) (PrincipalStatus, error) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+
+	if exists, ok := s.data[principalArn]; !ok {
+		return PrincipalUnknown, nil
+	} else if exists {
+		return PrincipalExists, nil
+	} else {
+		return PrincipalDoesNotExist, nil
+	}
 }
 
 func (s *Storage) lockDataFile(ctx *utils.Context) error {
@@ -142,19 +145,4 @@ func (s *Storage) lockDataFile(ctx *utils.Context) error {
 
 func (s *Storage) Close() error {
 	return os.Remove(s.lockPath)
-}
-
-func (s *Storage) GetStatus(principalArn string) (PrincipalStatus, *utils.Info, error) {
-	s.mux.Lock()
-	defer s.mux.Unlock()
-
-	if accountData, ok := s.data[principalArn]; !ok {
-		return PrincipalUnknown, nil, nil
-	} else if info, ok := accountData[principalArn]; !ok {
-		return PrincipalUnknown, nil, nil
-	} else if info.Exists {
-		return PrincipalExists, &info, nil
-	} else {
-		return PrincipalDoesNotExist, &info, nil
-	}
 }
