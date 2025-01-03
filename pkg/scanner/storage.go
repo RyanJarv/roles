@@ -34,7 +34,7 @@ func NewStorage(ctx *utils.Context, name string) (*Storage, error) {
 	}
 
 	utils.RunOnSigterm(ctx, func(ctx *utils.Context) {
-		err := storage.Save(ctx, "default")
+		err := storage.Save()
 		if err != nil {
 			ctx.Error.Printf("saving data: %s", err)
 		}
@@ -90,8 +90,8 @@ func (s *Storage) Load(ctx *utils.Context) error {
 	return nil
 }
 
-func (s *Storage) Save(ctx *utils.Context, name string) error {
-	path, err := utils.ExpandPath(fmt.Sprintf("~/.roles/%s.json", name))
+func (s *Storage) Save() error {
+	path, err := utils.ExpandPath(fmt.Sprintf("~/.roles/%s.json", s.name))
 	if err != nil {
 		return fmt.Errorf("expanding path: %s", err)
 	}

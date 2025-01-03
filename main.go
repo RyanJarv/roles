@@ -112,5 +112,9 @@ func Run(ctx *utils.Context, opts Opts) error {
 		}
 	}
 
+	if err := storage.Save(); err != nil {
+		return fmt.Errorf("saving storage: %s", err)
+	}
+
 	return nil
 }
