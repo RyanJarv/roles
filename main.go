@@ -39,7 +39,7 @@ func main() {
 	opts := Opts{}
 
 	flag.BoolVar(&opts.debug, "debug", false, "Enable debug logging")
-	flag.StringVar(&opts.region, "region", "", "AWS region to use for scanning")
+	flag.StringVar(&opts.region, "region", "us-east-1", "AWS region to use for scanning")
 	flag.StringVar(&opts.profile, "profile", "", "AWS profile to use for scanning")
 	flag.StringVar(&opts.name, "name", "default", "Name of the scan")
 	flag.StringVar(&opts.rolesPath, "roles", "", "Additional role names")
@@ -73,12 +73,24 @@ func Run(ctx *utils.Context, opts Opts) error {
 	}
 	defer storage.Close()
 
+	callerArn, accountId, err := utils.GetCallerInfo(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("getting caller info: %s", err)
+	}
+
+	ctx.Debug.Printf("callerArn: %s, accountId: %d", callerArn, accountId)
+
 	scan, err := scanner.NewScanner(ctx, &scanner.NewScannerInput{
 		Config:      cfg,
 		Concurrency: opts.concurrency,
 		Storage:     storage,
 		Force:       opts.force,
-		Plugins:     []plugins.Plugin{},
+		Plugins: []plugins.Plugin{
+			plugins.NewAccessPoint(plugins.NewAccessPointInput{
+				Config:    cfg,
+				AccountId: accountId,
+			}),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("new scanner: %s", err)

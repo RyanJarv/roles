@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/dlsniper/debugger"
 	"io"
 	"log"
@@ -312,4 +314,12 @@ func RunOnSigterm(ctx *Context, f func(*Context)) {
 		ctx.Debug.Println("shutdown cleanly")
 		os.Exit(0)
 	}()
+}
+
+func GetCallerInfo(ctx *Context, cfg aws.Config) (string, string, error) {
+	resp, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", "", fmt.Errorf("getting caller identity: %w", err)
+	}
+	return *resp.Arn, *resp.Account, nil
 }
