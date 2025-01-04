@@ -49,7 +49,7 @@ func NewContext(parentCtx context.Context) *Context {
 		Debug:   log.New(os.Stdout, Gray.Color("[DEBUG] "), 0),
 	}
 
-	ctx.Debug.SetOutput(io.Discard)
+	ctx.SetLoggingLevel(InfoLogLevel)
 	return &ctx
 }
 
@@ -79,7 +79,7 @@ func (ctx *Context) SetLoggingLevel(level LogLevel) Context {
 	if int(level) >= int(DebugLogLevel) {
 		ctx.Debug = log.New(os.Stderr, Gray.Color("[DEBUG] "), 0)
 	} else {
-		ctx.Info.SetOutput(io.Discard)
+		ctx.Debug.SetOutput(io.Discard)
 	}
 	return *ctx
 }

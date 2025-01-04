@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"context"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/ryanjarv/roles/pkg/plugins"
 	"github.com/ryanjarv/roles/pkg/utils"
@@ -125,59 +126,45 @@ func (s *Scanner) CleanUp(ctx *utils.Context) error {
 }
 
 func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns []string) chan Result {
-	queueSize := 0
-	for _, plugin := range plugins {
-		queueSize += plugin.Concurrency() * 2 * ConcurrencyMultiplier
-	}
+	queueSize := 10 * len(plugins)
 
 	ctx.Debug.Printf("queue size: %d", queueSize)
 
 	input := make(chan string, queueSize)
 	results := make(chan Result, queueSize)
 
-	MustSetupPlugins(ctx, plugins)
-
 	processed := 0
 
 	// Close the results channel when all plugins are done processing input.
 	wg := sync.WaitGroup{}
 	for _, plugin := range plugins {
-		for i := 0; i < plugin.Concurrency(); i++ {
-			wg.Add(1)
+		wg.Add(1)
 
-			go func(i int) {
-				for principalArn := range input {
-					if exists, err := plugin.ScanArn(ctx, principalArn); err != nil {
-						ctx.Error.Printf("%s-%d: scanning: %s", plugin.Name(), i, err)
+		go func() {
+			for principalArn := range input {
+				if exists, err := plugin.ScanArn(ctx, principalArn); err != nil {
+					ctx.Error.Printf("%s: scanning: %s", plugin.Name(), err)
+				} else {
+					if exists {
+						ctx.Debug.Printf("found: %s", principalArn)
 					} else {
-						if exists {
-							ctx.Debug.Printf("thread %d found: %s", i, principalArn)
-						} else {
-							ctx.Debug.Printf("thread %d not found: %s", i, principalArn)
-						}
-						processed++
-
-						results <- Result{Arn: principalArn, Exists: exists}
+						ctx.Debug.Printf("not found: %s", principalArn)
 					}
-				}
-				ctx.Debug.Printf("%s-%d: finished processing input", plugin.Name(), i)
+					processed++
 
-				wg.Done()
-				ctx.Debug.Printf("%s-%d: done", plugin.Name(), i)
-			}(i)
-		}
+					results <- Result{Arn: principalArn, Exists: exists}
+				}
+			}
+			ctx.Debug.Printf("%s: finished processing input", plugin.Name())
+
+			wg.Done()
+			ctx.Debug.Printf("%s: done", plugin.Name())
+		}()
 	}
 
-	start := time.Now()
-
 	go func() {
-		for {
-			time.Sleep(5 * time.Second)
-			LogStats(ctx, start, time.Now(), processed)
-		}
-	}()
+		statsCancel := LogStats(ctx, &processed)
 
-	go func() {
 		for _, principalArn := range principalArns {
 			input <- principalArn
 		}
@@ -185,26 +172,45 @@ func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns
 		close(input)
 
 		wg.Wait() // Wait for all plugins to finish processing input.
-		LogStats(ctx, start, time.Now(), processed)
+
+		statsCancel()
 		close(results)
 	}()
 	return results
 }
 
-func LogStats(ctx *utils.Context, start time.Time, now time.Time, processed int) {
-	elapsed := now.Sub(start)
-	perSecond := float64(processed) / elapsed.Seconds()
-	ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", processed, elapsed.Seconds(), perSecond)
+// LogStats logs stats every 5 seconds until the context is done.
+func LogStats(ctx *utils.Context, processed *int) context.CancelFunc {
+	start := time.Now()
+
+	ctx, cancelFunc := ctx.WithCancel()
+
+	go func() {
+		for {
+			elapsed := time.Now().Sub(start)
+			perSecond := float64(*processed) / elapsed.Seconds()
+			select {
+			case <-ctx.Done():
+				ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", *processed, elapsed.Seconds(), perSecond)
+				ctx.Debug.Printf("processed %d items", *processed)
+				break
+			case <-time.After(5 * time.Second):
+				ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", *processed, elapsed.Seconds(), perSecond)
+			}
+		}
+	}()
+
+	return cancelFunc
 }
 
-func MustSetupPlugins(ctx *utils.Context, plugins []plugins.Plugin) {
+func (s *Scanner) SetupPlugins(ctx *utils.Context) {
 	setupWg := sync.WaitGroup{}
 
-	for _, plugin := range plugins {
+	for _, plugin := range s.Plugins {
 		setupWg.Add(1)
 		go func() {
 			if err := plugin.Setup(ctx); err != nil {
-				ctx.Error.Fatalf("%s: setting up plugin: %s", plugin.Name(), err)
+				ctx.Error.Fatalf("%s: setup: %s", plugin.Name(), err)
 			}
 			setupWg.Done()
 		}()

@@ -78,7 +78,7 @@ type roleData struct {
 //
 // Example:
 //
-//	cdk-hnb659fds-deploy-role-{{AccountId}}-{{Region}}" -> [
+//	cdk-hnb659fds-deploy-role-{{AccountId}}-{{region}}" -> [
 //			"arn:aws:iam::123456789012:role/cdk-hnb659fds-deploy-role-123456789012-us-west-2"
 //	]
 func GetArn(role string, account string, region string) (string, error) {

@@ -94,6 +94,8 @@ func Run(ctx *utils.Context, opts Opts) error {
 		return nil
 	}
 
+	scan.SetupPlugins(ctx)
+
 	scanData, err := arn.GetArns(ctx, &arn.GetArnsInput{
 		AccountsStr:  opts.accountsStr,
 		AccountsPath: opts.accountsPath,

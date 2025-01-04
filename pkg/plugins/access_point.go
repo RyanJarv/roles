@@ -15,6 +15,8 @@ import (
 	"strings"
 )
 
+const Concurrency = 5
+
 type NewAccessPointInput struct {
 	AccountId string
 }
@@ -24,14 +26,18 @@ func NewAccessPoints(cfgs map[string]aws.Config, input NewAccessPointInput) []Pl
 	results := []Plugin{}
 
 	for region, cfg := range cfgs {
-		results = append(results, &AccessPoint{
-			NewAccessPointInput: input,
-			AccessPointName:     fmt.Sprintf("role-%s", region),
-			BucketName:          fmt.Sprintf("role-fh9283f-bucket-%s-%s", cfg.Region, input.AccountId),
-			Region:              region,
-			s3:                  s3.NewFromConfig(cfg),
-			s3control:           s3control.NewFromConfig(cfg),
-		})
+		for i := 0; i < Concurrency; i++ {
+			results = append(results, &AccessPoint{
+				NewAccessPointInput: input,
+				thread:              i,
+				// Make sure each thread has its own unique bucket and access point name.
+				accessPointName: fmt.Sprintf("role-%s-%d", region, i),
+				bucketName:      fmt.Sprintf("role-fh9283f-bucket-%s-%s-%d", cfg.Region, input.AccountId, i),
+				region:          region,
+				s3:              s3.NewFromConfig(cfg),
+				s3control:       s3control.NewFromConfig(cfg),
+			})
+		}
 	}
 
 	return results
@@ -39,64 +45,58 @@ func NewAccessPoints(cfgs map[string]aws.Config, input NewAccessPointInput) []Pl
 
 type AccessPoint struct {
 	NewAccessPointInput
+	thread          int
 	s3              *s3.Client
 	s3control       *s3control.Client
-	Region          string
-	AccessPointName string
-	BucketName      string
+	region          string
+	accessPointName string
+	bucketName      string
+	accesspointArn  string
 }
 
-func (s *AccessPoint) Name() string { return fmt.Sprintf("access-point-%s", s.Region) }
-
-// Concurrency returns the number of concurrent requests to make per region.
-func (s *AccessPoint) Concurrency() int { return 5 }
+func (s *AccessPoint) Name() string { return fmt.Sprintf("access-point-%s-%d", s.region, s.thread) }
 
 // Setup creates the bucket for this region if it doesn't exist.
 func (s *AccessPoint) Setup(ctx *utils.Context) error {
 	var conf *s3Types.CreateBucketConfiguration
 
-	// This shit is fucking wild, us-east-1 isn't a valid Region here. Who do these people even think they are?
-	if s.Region != "us-east-1" {
+	// This shit is fucking wild, us-east-1 isn't a valid region here. Who do these people even think they are?
+	if s.region != "us-east-1" {
 		conf = &s3Types.CreateBucketConfiguration{
-			LocationConstraint: s3Types.BucketLocationConstraint(s.Region),
+			LocationConstraint: s3Types.BucketLocationConstraint(s.region),
 		}
 	}
 
 	if _, err := s.s3.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket:                    &s.BucketName,
+		Bucket:                    &s.bucketName,
 		CreateBucketConfiguration: conf,
 	}); err != nil {
 		var yourBucketErr *s3Types.BucketAlreadyOwnedByYou
 		if ok := errors.As(err, &yourBucketErr); ok {
-			ctx.Debug.Printf("bucket already owned by us: %s", s.BucketName)
+			ctx.Debug.Printf("bucket already owned by us: %s", s.bucketName)
 		} else {
 			return fmt.Errorf("setup bucket: %w", err)
 		}
 	}
+
+	var err error
+	s.accesspointArn, err = SetupAccessPoint(ctx, s.s3control, s.accessPointName, s.AccountId, s.bucketName)
+	if err != nil {
+		return fmt.Errorf("setup access point: %w", err)
+	}
+
 	return nil
 }
 
 func (s *AccessPoint) ScanArn(ctx *utils.Context, arn string) (bool, error) {
-	name := fmt.Sprintf("%s-%s", s.AccessPointName, utils.RandStringRunes(16))
-	accesspointArn, err := SetupAccessPoint(ctx, s.s3control, name, s.AccountId, s.BucketName)
-	if err != nil {
-		return false, err
-	}
-
-	defer func() {
-		if err := DeleteAccessPoint(ctx, *s.s3control, name, s.AccountId); err != nil {
-			ctx.Error.Printf("deleting accesspoint: %s", err)
-		}
-	}()
-
-	policy, err := json.Marshal(GenerateTrustPolicy(accesspointArn, arn))
+	policy, err := json.Marshal(GenerateTrustPolicy(s.accesspointArn, arn))
 	if err != nil {
 		return false, fmt.Errorf("marshalling policy: %w", err)
 	}
 
 	_, err = s.s3control.PutAccessPointPolicy(ctx, &s3control.PutAccessPointPolicyInput{
 		AccountId: &s.AccountId,
-		Name:      &name,
+		Name:      &s.accessPointName,
 		Policy:    aws.String(string(policy)),
 	})
 	if err != nil {
@@ -115,7 +115,7 @@ func (s *AccessPoint) ScanArn(ctx *utils.Context, arn string) (bool, error) {
 func (s *AccessPoint) CleanUp(ctx *utils.Context) error {
 	points, err := s.s3control.ListAccessPoints(ctx, &s3control.ListAccessPointsInput{
 		AccountId: &s.AccountId,
-		Bucket:    &s.BucketName,
+		Bucket:    &s.bucketName,
 	})
 	if err != nil {
 		return fmt.Errorf("listing access points: %w", err)
