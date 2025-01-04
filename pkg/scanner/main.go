@@ -7,6 +7,7 @@ import (
 	"github.com/samber/lo"
 	"iter"
 	"sync"
+	"time"
 )
 
 const ConcurrencyMultiplier = 1
@@ -136,6 +137,8 @@ func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns
 
 	MustSetupPlugins(ctx, plugins)
 
+	processed := 0
+
 	// Close the results channel when all plugins are done processing input.
 	wg := sync.WaitGroup{}
 	for _, plugin := range plugins {
@@ -152,6 +155,7 @@ func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns
 						} else {
 							ctx.Debug.Printf("thread %d not found: %s", i, principalArn)
 						}
+						processed++
 
 						results <- Result{Arn: principalArn, Exists: exists}
 					}
@@ -164,6 +168,15 @@ func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns
 		}
 	}
 
+	start := time.Now()
+
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			LogStats(ctx, start, time.Now(), processed)
+		}
+	}()
+
 	go func() {
 		for _, principalArn := range principalArns {
 			input <- principalArn
@@ -172,9 +185,16 @@ func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns
 		close(input)
 
 		wg.Wait() // Wait for all plugins to finish processing input.
+		LogStats(ctx, start, time.Now(), processed)
 		close(results)
 	}()
 	return results
+}
+
+func LogStats(ctx *utils.Context, start time.Time, now time.Time, processed int) {
+	elapsed := now.Sub(start)
+	perSecond := float64(processed) / elapsed.Seconds()
+	ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", processed, elapsed.Seconds(), perSecond)
 }
 
 func MustSetupPlugins(ctx *utils.Context, plugins []plugins.Plugin) {
