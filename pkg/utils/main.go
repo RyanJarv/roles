@@ -83,13 +83,12 @@ func (ctx *Context) SetLoggingLevel(level LogLevel) Context {
 
 func (ctx *Context) WithCancel() (*Context, context.CancelFunc) {
 	var cancel context.CancelFunc
-	ctx.Context, cancel = context.WithCancel(ctx.Context)
 	newCtx := &Context{
-		Context: ctx,
-		Info:    ctx.Info,
-		Debug:   ctx.Debug,
-		Error:   ctx.Error,
+		Info:  ctx.Info,
+		Debug: ctx.Debug,
+		Error: ctx.Error,
 	}
+	newCtx.Context, cancel = context.WithCancel(ctx.Context)
 
 	newCtx.SetLoggingLevel(ctx.LogLevel)
 	return newCtx, cancel

@@ -209,5 +209,17 @@ func Setup(ctx *utils.Context, opts Opts) error {
 		}
 	}
 
+	cfgs, caller, err := utils.LoadConfigs(ctx, opts.profile)
+	if err != nil {
+		return fmt.Errorf("loading configs: %s", err)
+	}
+
+	scan := scanner.NewScanner(&scanner.NewScannerInput{
+		Force:   opts.force,
+		Plugins: LoadAllPlugins(cfgs, caller),
+	})
+
+	scan.SetupPlugins(ctx)
+
 	return nil
 }
