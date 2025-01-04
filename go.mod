@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.32.7
 	github.com/aws/aws-sdk-go-v2/config v1.27.43
 	github.com/aws/aws-sdk-go-v2/service/account v1.22.1
+	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.29.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.65.3
 	github.com/aws/aws-sdk-go-v2/service/s3control v1.49.2
 	github.com/aws/aws-sdk-go-v2/service/sns v1.33.8
@@ -15,6 +16,7 @@ require (
 	github.com/dlsniper/debugger v0.6.0
 	github.com/google/go-cmp v0.6.0
 	github.com/samber/lo v1.47.0
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
@@ -31,5 +33,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.24.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.2 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -119,8 +119,8 @@ func EnableAllRegions(ctx *Context, cfg aws.Config) error {
 	return nil
 }
 
-func GenerateTrustPolicy(resourceArn, action, arn string) PolicyDocument {
-	document := PolicyDocument{
+func GenerateTrustPolicy(resourceArn, action, principalArn string) PolicyDocument {
+	return PolicyDocument{
 		Version: "2012-10-17",
 		Statement: []PolicyStatement{
 			{
@@ -129,10 +129,9 @@ func GenerateTrustPolicy(resourceArn, action, arn string) PolicyDocument {
 				Action:   action,
 				Resource: resourceArn,
 				Principal: PolicyPrincipal{
-					AWS: arn,
+					AWS: principalArn,
 				},
 			},
 		},
 	}
-	return document
 }

@@ -83,16 +83,19 @@ func main() {
 // Add new plugins here.
 func LoadAllPlugins(cfgs map[string]aws.Config, caller *sts.GetCallerIdentityOutput) [][]plugins.Plugin {
 	return [][]plugins.Plugin{
+		plugins.NewECRPublicRepositories(cfgs, 10, plugins.NewECRPublicInput{
+			AccountId: *caller.Account,
+		}),
 		plugins.NewAccessPoints(cfgs, 4, plugins.NewAccessPointInput{
 			AccountId: *caller.Account,
 		}),
 		plugins.NewS3Buckets(cfgs, 4, plugins.NewS3BucketInput{
 			AccountId: *caller.Account,
 		}),
-		plugins.NewSNSTopics(cfgs, 5, plugins.NewSNSInput{
+		plugins.NewSNSTopics(cfgs, 10, plugins.NewSNSInput{
 			AccountId: *caller.Account,
 		}),
-		plugins.NewSQSQueues(cfgs, 5, plugins.NewSQSInput{
+		plugins.NewSQSQueues(cfgs, 10, plugins.NewSQSInput{
 			AccountId: *caller.Account,
 		}),
 	}
