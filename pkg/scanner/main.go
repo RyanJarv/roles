@@ -111,12 +111,10 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 }
 
 func (s *Scanner) CleanUp(ctx *utils.Context) error {
-	for _, plugin := range s.Plugins {
-		if p, ok := plugin.(plugins.CleanUpPlugin); ok {
-			ctx.Info.Printf("cleaning up %s", plugin.Name())
-			if err := p.CleanUp(ctx); err != nil {
-				return err
-			}
+	for _, p := range s.Plugins {
+		ctx.Info.Printf("cleaning up %s", p.Name())
+		if err := p.CleanUp(ctx); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -207,6 +205,7 @@ func (s *Scanner) SetupPlugins(ctx *utils.Context) {
 			if err := plugin.Setup(ctx); err != nil {
 				ctx.Error.Fatalf("%s: setup: %s", plugin.Name(), err)
 			}
+			ctx.Info.Printf("%s: setup complete", plugin.Name())
 			setupWg.Done()
 		}()
 	}

@@ -86,6 +86,9 @@ func LoadAllPlugins(cfgs map[string]aws.Config, caller *sts.GetCallerIdentityOut
 		plugins.NewAccessPoints(cfgs, plugins.NewAccessPointInput{
 			AccountId: *caller.Account,
 		}),
+		plugins.NewS3Buckets(cfgs, plugins.NewS3BucketInput{
+			AccountId: *caller.Account,
+		}),
 	}
 }
 
@@ -171,6 +174,7 @@ func Setup(ctx *utils.Context, opts Opts) error {
 		Plugins: LoadAllPlugins(cfgs, caller),
 	})
 
+	ctx.Info.Printf("Setting up plugins")
 	scan.SetupPlugins(ctx)
 
 	return nil

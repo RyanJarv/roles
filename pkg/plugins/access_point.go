@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-const Concurrency = 5
+const AccessPointConcurrency = 5
 
 type NewAccessPointInput struct {
 	AccountId string
@@ -26,16 +26,18 @@ func NewAccessPoints(cfgs map[string]aws.Config, input NewAccessPointInput) []Pl
 	results := []Plugin{}
 
 	for region, cfg := range cfgs {
-		for i := 0; i < Concurrency; i++ {
+		for i := 0; i < AccessPointConcurrency; i++ {
+			accessPointName := fmt.Sprintf("role-%s-%d", region, i)
 			results = append(results, &AccessPoint{
 				NewAccessPointInput: input,
 				thread:              i,
 				// Make sure each thread has its own unique bucket and access point name.
-				accessPointName: fmt.Sprintf("role-%s-%d", region, i),
-				bucketName:      fmt.Sprintf("role-fh9283f-bucket-%s-%s-%d", cfg.Region, input.AccountId, i),
+				accessPointName: accessPointName,
+				bucketName:      fmt.Sprintf("role-fh9283f-s3-access-points-%s-%s-%d", cfg.Region, input.AccountId, i),
 				region:          region,
 				s3:              s3.NewFromConfig(cfg),
 				s3control:       s3control.NewFromConfig(cfg),
+				accesspointArn:  fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", region, input.AccountId, accessPointName),
 			})
 		}
 	}
@@ -79,13 +81,44 @@ func (s *AccessPoint) Setup(ctx *utils.Context) error {
 		}
 	}
 
-	var err error
-	s.accesspointArn, err = SetupAccessPoint(ctx, s.s3control, s.accessPointName, s.AccountId, s.bucketName)
-	if err != nil {
+	if _, err := setupAccessPoint(ctx, s.s3control, s.accessPointName, s.AccountId, s.bucketName); err != nil {
 		return fmt.Errorf("setup access point: %w", err)
 	}
 
 	return nil
+}
+
+func setupAccessPoint(ctx context.Context, api *s3control.Client, name, account, bucket string) (string, error) {
+	accessPoint, err := api.CreateAccessPoint(ctx, &s3control.CreateAccessPointInput{
+		Name:            &name,
+		AccountId:       &account,
+		Bucket:          &bucket,
+		BucketAccountId: &account,
+		PublicAccessBlockConfiguration: &s3controlTypes.PublicAccessBlockConfiguration{
+			BlockPublicAcls:       aws.Bool(true),
+			BlockPublicPolicy:     aws.Bool(true),
+			IgnorePublicAcls:      aws.Bool(true),
+			RestrictPublicBuckets: aws.Bool(true),
+		},
+	})
+	if err != nil {
+		oe := &smithy.GenericAPIError{}
+		if errors.As(err, &oe) && oe.ErrorCode() == "AccessPointAlreadyOwnedByYou" {
+			point, err := api.GetAccessPoint(ctx, &s3control.GetAccessPointInput{
+				Name:      &name,
+				AccountId: &account,
+			})
+			if err != nil {
+				return "", fmt.Errorf("get accesspoint: %w", err)
+			}
+
+			return *point.AccessPointArn, nil
+		}
+
+		return "", fmt.Errorf("setup access point: %w", err)
+	}
+
+	return *accessPoint.AccessPointArn, nil
 }
 
 func (s *AccessPoint) ScanArn(ctx *utils.Context, arn string) (bool, error) {
@@ -122,53 +155,18 @@ func (s *AccessPoint) CleanUp(ctx *utils.Context) error {
 
 	for _, point := range points.AccessPointList {
 		ctx.Debug.Printf("deleting up accesspoint %s", *point.Name)
-		if err := DeleteAccessPoint(ctx, *s.s3control, *point.Name, s.AccountId); err != nil {
-			ctx.Error.Printf("deleting accesspoint: %s", err)
+		if _, err := s.s3control.DeleteAccessPoint(ctx, &s3control.DeleteAccessPointInput{
+			Name:      point.Name,
+			AccountId: &s.AccountId,
+		}); err != nil {
+			return fmt.Errorf("deleting accesspoint: %s", err)
 		}
 	}
 
-	return nil
-}
-
-func SetupAccessPoint(ctx context.Context, api *s3control.Client, name, account, bucket string) (string, error) {
-	accessPoint, err := api.CreateAccessPoint(ctx, &s3control.CreateAccessPointInput{
-		Name:            &name,
-		AccountId:       &account,
-		Bucket:          &bucket,
-		BucketAccountId: &account,
-		PublicAccessBlockConfiguration: &s3controlTypes.PublicAccessBlockConfiguration{
-			BlockPublicAcls:       aws.Bool(true),
-			BlockPublicPolicy:     aws.Bool(true),
-			IgnorePublicAcls:      aws.Bool(true),
-			RestrictPublicBuckets: aws.Bool(true),
-		},
-	})
-	if err != nil {
-		oe := &smithy.GenericAPIError{}
-		if errors.As(err, &oe) && oe.ErrorCode() == "AccessPointAlreadyOwnedByYou" {
-			point, err := api.GetAccessPoint(ctx, &s3control.GetAccessPointInput{
-				Name:      &name,
-				AccountId: &account,
-			})
-			if err != nil {
-				return "", fmt.Errorf("get accesspoint: %w", err)
-			}
-
-			return *point.AccessPointArn, nil
-		}
-
-		return "", fmt.Errorf("setup access point: %w", err)
-	}
-
-	return *accessPoint.AccessPointArn, nil
-}
-
-func DeleteAccessPoint(ctx context.Context, api s3control.Client, name string, account string) error {
-	if _, err := api.DeleteAccessPoint(ctx, &s3control.DeleteAccessPointInput{
-		Name:      &name,
-		AccountId: &account,
+	if _, err := s.s3.DeleteBucket(ctx, &s3.DeleteBucketInput{
+		Bucket: &s.bucketName,
 	}); err != nil {
-		return fmt.Errorf("teardown: %w", err)
+		return fmt.Errorf("deleting bucket: %w", err)
 	}
 
 	return nil
