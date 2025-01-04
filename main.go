@@ -8,11 +8,13 @@ package main
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/account"
+	accountTypes "github.com/aws/aws-sdk-go-v2/service/account/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/ryanjarv/roles/pkg/arn"
 	"github.com/ryanjarv/roles/pkg/plugins"
@@ -21,6 +23,7 @@ import (
 	"github.com/samber/lo"
 	"os"
 	"strings"
+	"time"
 )
 
 //go:embed data/regions.list
@@ -28,6 +31,7 @@ var regionsList string
 
 type Opts struct {
 	debug        bool
+	setup        bool
 	profile      string
 	name         string
 	rolesPath    string
@@ -50,6 +54,7 @@ func main() {
 	flag.StringVar(&opts.accountsStr, "accounts", "", "Path to a file containing account IDs")
 	flag.IntVar(&opts.concurrency, "concurrency", 2, "Scanner concurrency")
 	flag.BoolVar(&opts.force, "force", false, "Force rescan")
+	flag.BoolVar(&opts.setup, "setup", false, "Run optional one-time account optimization setup")
 
 	flag.Parse()
 
@@ -59,13 +64,37 @@ func main() {
 		ctx.Debug.SetOutput(os.Stderr)
 	}
 
-	if err := Run(ctx, opts); err != nil {
-		ctx.Error.Fatalf("running: %s", err)
+	if opts.setup && opts.clean {
+		ctx.Error.Fatalf("cannot use both --setup and --clean")
+	} else if opts.setup {
+		// Run optional one-time account optimizer
+		if err := Setup(ctx, opts); err != nil {
+			ctx.Error.Fatalf("running: %s", err)
+		}
+	} else if opts.clean {
+		if err := CleanUp(ctx, opts); err != nil {
+			ctx.Error.Fatalf("running: %s", err)
+		}
+	} else {
+		if err := Run(ctx, opts); err != nil {
+			ctx.Error.Fatalf("running: %s", err)
+		}
+	}
+}
+
+// LoadAllPlugins loads all enabled plugins.
+//
+// Add new plugins here.
+func LoadAllPlugins(cfgs map[string]aws.Config, caller *sts.GetCallerIdentityOutput) [][]plugins.Plugin {
+	return [][]plugins.Plugin{
+		plugins.NewAccessPoints(cfgs, plugins.NewAccessPointInput{
+			AccountId: *caller.Account,
+		}),
 	}
 }
 
 func Run(ctx *utils.Context, opts Opts) error {
-	cfgs, caller, err := LoadConfigs(ctx, opts.profile)
+	cfgs, caller, err := utils.LoadConfigs(ctx, opts.profile)
 	if err != nil {
 		return fmt.Errorf("loading configs: %s", err)
 	}
@@ -77,22 +106,10 @@ func Run(ctx *utils.Context, opts Opts) error {
 	defer storage.Close()
 
 	scan := scanner.NewScanner(&scanner.NewScannerInput{
-		Concurrency: opts.concurrency,
-		Storage:     storage,
-		Force:       opts.force,
-		Plugins: [][]plugins.Plugin{
-			plugins.NewAccessPoints(cfgs, plugins.NewAccessPointInput{
-				AccountId: *caller.Account,
-			}),
-		},
+		Storage: storage,
+		Force:   opts.force,
+		Plugins: LoadAllPlugins(cfgs, caller),
 	})
-
-	if opts.clean {
-		if err := scan.CleanUp(ctx); err != nil {
-			return fmt.Errorf("cleaning up: %s", err)
-		}
-		return nil
-	}
 
 	scan.SetupPlugins(ctx)
 
@@ -119,30 +136,78 @@ func Run(ctx *utils.Context, opts Opts) error {
 	return nil
 }
 
-func LoadConfigs(ctx *utils.Context, profile string) (map[string]aws.Config, *sts.GetCallerIdentityOutput, error) {
-	cfg, err := config.LoadDefaultConfig(ctx.Context, config.WithRegion("us-east-1"), config.WithSharedConfigProfile(profile))
+func CleanUp(ctx *utils.Context, opts Opts) error {
+	cfgs, caller, err := utils.LoadConfigs(ctx, opts.profile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("loading config: %s", err)
+		return fmt.Errorf("loading configs: %s", err)
 	}
 
-	caller, err := utils.GetCallerInfo(ctx, cfg)
+	scan := scanner.NewScanner(&scanner.NewScannerInput{
+		Plugins: LoadAllPlugins(cfgs, caller),
+	})
+
+	if err := scan.CleanUp(ctx); err != nil {
+		return fmt.Errorf("cleaning up: %s", err)
+	}
+	return nil
+}
+
+// Setup runs a one-time account optimization
+func Setup(ctx *utils.Context, opts Opts) error {
+	ctx.Info.Printf("Running one-time account optimization")
+
+	cfg, err := config.LoadDefaultConfig(ctx.Context, config.WithRegion("us-east-1"), config.WithSharedConfigProfile(opts.profile))
 	if err != nil {
-		return nil, caller, fmt.Errorf("getting caller info: %s", err)
+		return fmt.Errorf("loading config: %s", err)
 	}
 
-	regions, err := ec2.NewFromConfig(cfg).DescribeRegions(ctx, &ec2.DescribeRegionsInput{})
+	ctx.Info.Printf("Enabling all regions, this can take a while...")
+
+	svc := account.NewFromConfig(cfg)
+	resp, err := svc.ListRegions(ctx, &account.ListRegionsInput{
+		RegionOptStatusContains: []accountTypes.RegionOptStatus{
+			accountTypes.RegionOptStatusDisabled,
+		},
+	})
 	if err != nil {
-		return nil, nil, err
+		return fmt.Errorf("describing regions: %s", err)
 	}
 
-	cfgs := make(map[string]aws.Config, len(regions.Regions))
-	for _, region := range regions.Regions {
-		cfgCopy := cfg.Copy()
-		cfgCopy.Region = *region.RegionName
-		cfgs[*region.RegionName] = cfgCopy
+	for _, region := range resp.Regions {
+		for {
+			ctx.Info.Printf("Opting in to region %s", *region.RegionName)
+
+			var toManyReqs *accountTypes.TooManyRequestsException
+
+			if _, err := svc.EnableRegion(ctx, &account.EnableRegionInput{
+				RegionName: region.RegionName,
+			}); errors.As(err, &toManyReqs) {
+				ctx.Info.Printf("Too many requests, sleeping for 10 seconds")
+				time.Sleep(10 * time.Second)
+				continue
+			} else if err != nil {
+				return fmt.Errorf("enabling region %s: %s", *region.RegionName, err)
+			} else {
+				break
+			}
+		}
 	}
 
-	ctx.Debug.Printf("callerArn: %s, accountId: %s", *caller.Arn, *caller.Account)
+	for {
+		time.Sleep(2 * time.Second)
 
-	return cfgs, caller, nil
+		if resp, err := svc.ListRegions(ctx, &account.ListRegionsInput{
+			RegionOptStatusContains: []accountTypes.RegionOptStatus{
+				accountTypes.RegionOptStatusEnabling,
+			},
+		}); err != nil {
+			return fmt.Errorf("describing regions: %s", err)
+		} else if len(resp.Regions) == 0 {
+			break
+		} else {
+			ctx.Info.Printf("Waiting for %d regions to finish enabling", len(resp.Regions))
+		}
+	}
+
+	return nil
 }

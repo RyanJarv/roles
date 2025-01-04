@@ -75,7 +75,7 @@ func (s *AccessPoint) Setup(ctx *utils.Context) error {
 		if ok := errors.As(err, &yourBucketErr); ok {
 			ctx.Debug.Printf("bucket already owned by us: %s", s.bucketName)
 		} else {
-			return fmt.Errorf("setup bucket: %w", err)
+			return fmt.Errorf("create bucket: %w", err)
 		}
 	}
 

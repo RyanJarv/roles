@@ -11,13 +11,10 @@ import (
 	"time"
 )
 
-const ConcurrencyMultiplier = 1
-
 type NewScannerInput struct {
-	Concurrency int
-	Storage     *Storage
-	Plugins     [][]plugins.Plugin
-	Force       bool
+	Storage *Storage
+	Plugins [][]plugins.Plugin
+	Force   bool
 }
 
 func NewScanner(input *NewScannerInput) *Scanner {
@@ -191,8 +188,6 @@ func LogStats(ctx *utils.Context, processed *int) context.CancelFunc {
 			perSecond := float64(*processed) / elapsed.Seconds()
 			select {
 			case <-ctx.Done():
-				ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", *processed, elapsed.Seconds(), perSecond)
-				ctx.Debug.Printf("processed %d items", *processed)
 				break
 			case <-time.After(5 * time.Second):
 				ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", *processed, elapsed.Seconds(), perSecond)
