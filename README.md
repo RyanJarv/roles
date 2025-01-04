@@ -32,18 +32,28 @@ DynamicRoleName-{{.Region}}-{{.AccountId}} # Software A # Found at ...
 path/DynamicRoleName-{{.Region}}-{{.AccountId}} # Software B # Found at ...
 ```
 
-## Plugins
-
-Plugins can be put in [./pkg/plugins](./pkg/plugins). These should implement the plugin.Plugin interface:
+## Build
 
 ```
+make build
+./build/roles -help
+```
+
+
+
+## Plugins
+
+The info below is mostly for passing to ChatGPT to generate new plugins. Just make sure to pass an example along with this info.
+
+```
+Plugins can be put in [./pkg/plugins](./pkg/plugins). These should implement the plugin.Plugin interface:
+
 type Plugin interface {
 	Name() string
 	Setup(ctx *utils.Context) error
 	ScanArn(ctx *utils.Context, arn string) (bool, error)
 	CleanUp(ctx *utils.Context) error
 }
-```
 
 And have a initializer function of:
 
@@ -51,7 +61,7 @@ And have a initializer function of:
 
 The initializer funtion takes a map of region names to aws.Config's, one for each active region in the account and should return new SNS plugin for each region/thread.
 
-```
+
 // NewSNSTopics creates a new SNS plugin for each region/thread.
 func NewSNSTopics(cfgs map[string]aws.Config, concurrency int, input NewSNSInput) []Plugin {
 	var results []Plugin
@@ -76,7 +86,6 @@ func NewSNSTopics(cfgs map[string]aws.Config, concurrency int, input NewSNSInput
 
 	return results
 }
-```
 
 The initializer function must create all variables consumed in all other methods, we can not rely on `Setup` being called before any other method.
 
@@ -97,7 +106,6 @@ And each call to `ScanArn` will only update the topic attributes of it's own SNS
 The `ScanArn` method takes a given principal ARN as a string and returns true if the principal ARN exists, and false if it doesn't. It does this by updating the
 resource policy of the resource owned by the current thread to the policy generated from a call to `GenerateTrustPolicy`:
 
-```
 func GenerateTrustPolicy(resourceArn, action, principalArn string) PolicyDocument {
 	return PolicyDocument{
 		Version: "2012-10-17",
@@ -114,17 +122,9 @@ func GenerateTrustPolicy(resourceArn, action, principalArn string) PolicyDocumen
 		},
 	}
 }
-```
 
 GenerateTrustPolicy takes the `resourceArn` of the current thread's Resource which will be updated, a valid action, and the principalArn which is currently being
 scanned. Each resource behaves slightly differently, but updating the resource policy will return succesfully if the specified `principalArn` exists, and a specific
 error if it does not.
 
-ChatGPT can generate these plugins for you by passing this description and an example plugin.
-
-## Build
-
-```
-make build
-./build/roles -help
 ```
