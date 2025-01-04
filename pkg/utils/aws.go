@@ -119,14 +119,14 @@ func EnableAllRegions(ctx *Context, cfg aws.Config) error {
 	return nil
 }
 
-func GenerateTrustPolicy(resourceArn string, arn string) PolicyDocument {
+func GenerateTrustPolicy(resourceArn, action, arn string) PolicyDocument {
 	document := PolicyDocument{
 		Version: "2012-10-17",
 		Statement: []PolicyStatement{
 			{
 				Sid:      "testrole",
 				Effect:   "Deny",
-				Action:   "*",
+				Action:   action,
 				Resource: resourceArn,
 				Principal: PolicyPrincipal{
 					AWS: arn,

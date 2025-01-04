@@ -89,6 +89,9 @@ func LoadAllPlugins(cfgs map[string]aws.Config, caller *sts.GetCallerIdentityOut
 		plugins.NewS3Buckets(cfgs, plugins.NewS3BucketInput{
 			AccountId: *caller.Account,
 		}),
+		plugins.NewSNSTopics(cfgs, plugins.NewSNSInput{
+			AccountId: *caller.Account,
+		}),
 	}
 }
 

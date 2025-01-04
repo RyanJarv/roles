@@ -122,7 +122,7 @@ func setupAccessPoint(ctx context.Context, api *s3control.Client, name, account,
 }
 
 func (s *AccessPoint) ScanArn(ctx *utils.Context, arn string) (bool, error) {
-	policy, err := json.Marshal(utils.GenerateTrustPolicy(s.accesspointArn, arn))
+	policy, err := json.Marshal(utils.GenerateTrustPolicy(s.accesspointArn, "*", arn))
 	if err != nil {
 		return false, fmt.Errorf("marshalling policy: %w", err)
 	}

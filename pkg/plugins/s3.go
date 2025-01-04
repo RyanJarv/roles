@@ -81,7 +81,7 @@ func (s *S3Bucket) Setup(ctx *utils.Context) error {
 // If the ARN is invalid (non-existent role), a "MalformedPolicy" error
 // containing "invalid principal" is returned by AWS.
 func (s *S3Bucket) ScanArn(ctx *utils.Context, arn string) (bool, error) {
-	policyDoc, err := json.Marshal(utils.GenerateTrustPolicy(fmt.Sprintf("arn:aws:s3:::%s", s.bucketName), arn))
+	policyDoc, err := json.Marshal(utils.GenerateTrustPolicy(fmt.Sprintf("arn:aws:s3:::%s", s.bucketName), "*", arn))
 	if err != nil {
 		return false, fmt.Errorf("marshalling policy: %w", err)
 	}
