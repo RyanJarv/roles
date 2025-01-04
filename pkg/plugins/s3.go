@@ -13,18 +13,16 @@ import (
 	"github.com/aws/smithy-go"
 )
 
-const S3Concurrency = 5
-
 type NewS3BucketInput struct {
 	AccountId string
 }
 
 // NewS3Buckets creates a new S3 plugin for each region/thread.
-func NewS3Buckets(cfgs map[string]aws.Config, input NewS3BucketInput) []Plugin {
+func NewS3Buckets(cfgs map[string]aws.Config, concurrency int, input NewS3BucketInput) []Plugin {
 	results := []Plugin{}
 
 	for region, cfg := range cfgs {
-		for i := 0; i < S3Concurrency; i++ {
+		for i := 0; i < concurrency; i++ {
 			results = append(results, &S3Bucket{
 				NewS3BucketInput: input,
 				thread:           i,

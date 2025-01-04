@@ -15,18 +15,16 @@ import (
 	"strings"
 )
 
-const AccessPointConcurrency = 5
-
 type NewAccessPointInput struct {
 	AccountId string
 }
 
 // NewAccessPoints creates a new access point plugin for each region.
-func NewAccessPoints(cfgs map[string]aws.Config, input NewAccessPointInput) []Plugin {
+func NewAccessPoints(cfgs map[string]aws.Config, concurrency int, input NewAccessPointInput) []Plugin {
 	results := []Plugin{}
 
 	for region, cfg := range cfgs {
-		for i := 0; i < AccessPointConcurrency; i++ {
+		for i := 0; i < concurrency; i++ {
 			accessPointName := fmt.Sprintf("role-%s-%d", region, i)
 			results = append(results, &AccessPoint{
 				NewAccessPointInput: input,

@@ -32,6 +32,8 @@ github.com/aws/aws-sdk-go-v2/service/s3control v1.49.2 h1:W1nwi6M/LfTRO8bPw9wlKJ
 github.com/aws/aws-sdk-go-v2/service/s3control v1.49.2/go.mod h1:+EAvXfnipjpvEfaKWS98sgU7KgzEuH4/qxJIeEG+GTY=
 github.com/aws/aws-sdk-go-v2/service/sns v1.33.8 h1:zKokiUMOfbZSrAUVqw+bSjr6gl9u/JcvPzHTmL+tmdQ=
 github.com/aws/aws-sdk-go-v2/service/sns v1.33.8/go.mod h1:Nf9YEyqE51C+Dyj0DWSATxvsr39jBFIss6Jee9Hyqx4=
+github.com/aws/aws-sdk-go-v2/service/sqs v1.37.4 h1:WpoMCoS4+qOkkuWQommvDRboKYzK91En6eXO/k5dXr0=
+github.com/aws/aws-sdk-go-v2/service/sqs v1.37.4/go.mod h1:171mrsbgz6DahPMnLJzQiH3bXXrdsWhpE9USZiM19Lk=
 github.com/aws/aws-sdk-go-v2/service/sso v1.24.2 h1:bSYXVyUzoTHoKalBmwaZxs97HU9DWWI3ehHSAMa7xOk=
 github.com/aws/aws-sdk-go-v2/service/sso v1.24.2/go.mod h1:skMqY7JElusiOUjMJMOv1jJsP7YUg7DrhgqZZWuzu1U=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.2 h1:AhmO1fHINP9vFYUE0LHzCWg/LfUWUF+zFPEcY9QXb7o=

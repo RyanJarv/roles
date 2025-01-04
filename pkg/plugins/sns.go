@@ -11,22 +11,20 @@ import (
 	"strings"
 )
 
-const SNSConcurrency = 5
-
 type NewSNSInput struct {
 	AccountId string
 }
 
 // NewSNSTopics creates each SNS topic upfront and stores its ARN.
 // We do *not* rely on Setup() to create anything.
-func NewSNSTopics(cfgs map[string]aws.Config, input NewSNSInput) []Plugin {
+func NewSNSTopics(cfgs map[string]aws.Config, concurrency int, input NewSNSInput) []Plugin {
 	var results []Plugin
 
 	for region, cfg := range cfgs {
 		// Create a single sns.Client per region
 		snsClient := sns.NewFromConfig(cfg)
 
-		for i := 0; i < SNSConcurrency; i++ {
+		for i := 0; i < concurrency; i++ {
 			topicName := fmt.Sprintf("role-fh9283f-sns-%s-%s-%d", region, input.AccountId, i)
 
 			results = append(results, &SNSTopic{
