@@ -58,7 +58,7 @@ type ECRPublicRepository struct {
 	repositoryName string
 	repositoryArn  string
 
-	client IPublicClient
+	client IECRPublicClient
 }
 
 // Name returns a unique name for this plugin instance.

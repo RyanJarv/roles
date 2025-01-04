@@ -15,8 +15,7 @@ type NewSNSInput struct {
 	AccountId string
 }
 
-// NewSNSTopics creates each SNS topic upfront and stores its ARN.
-// We do *not* rely on Setup() to create anything.
+// NewSNSTopics creates a new SNS plugin for each region/thread.
 func NewSNSTopics(cfgs map[string]aws.Config, concurrency int, input NewSNSInput) []Plugin {
 	var results []Plugin
 
@@ -49,21 +48,26 @@ type SNSTopic struct {
 	topicName string
 	topicArn  string
 
-	snsClient *sns.Client
+	snsClient ISNSClient
 }
 
 func (t *SNSTopic) Name() string {
 	return fmt.Sprintf("sns-%s-%d", t.region, t.thread)
 }
 
-// Setup is a no-op in this version, since we already created the topic in NewSNSTopics.
+// Setup creates the SNS topic if it doesn't already exist.
 func (t *SNSTopic) Setup(ctx *utils.Context) error {
+	_, err := t.snsClient.CreateTopic(ctx, &sns.CreateTopicInput{
+		Name: &t.topicName,
+	})
+	if err != nil {
+		return fmt.Errorf("creating topic: %w", err)
+	}
+
 	return nil
 }
 
-// ScanArn updates the SNS topic policy referencing the provided ARN.
-// If the role ARN doesn't exist, we'll typically see an "InvalidParameter" or
-// "AuthorizationError" with "invalid principal."
+// ScanArn updates the SNS topic policy referencing the provided ARN and returns true if the principal is valid.
 func (t *SNSTopic) ScanArn(ctx *utils.Context, arn string) (bool, error) {
 	// Generate a trust policy referencing the topic ARN and the target role ARN
 	policyDoc, err := json.Marshal(utils.GenerateTrustPolicy(t.topicArn, "SNS:GetTopicAttributes", arn))
@@ -88,11 +92,6 @@ func (t *SNSTopic) ScanArn(ctx *utils.Context, arn string) (bool, error) {
 
 // CleanUp deletes the SNS topic that was created in NewSNSTopics.
 func (t *SNSTopic) CleanUp(ctx *utils.Context) error {
-	if t.topicArn == "" {
-		// No ARN stored, so we can't delete anything
-		return nil
-	}
-
 	_, err := t.snsClient.DeleteTopic(ctx, &sns.DeleteTopicInput{
 		TopicArn: &t.topicArn,
 	})
@@ -103,6 +102,7 @@ func (t *SNSTopic) CleanUp(ctx *utils.Context) error {
 	return nil
 }
 
+// SNSNonExistentPrincipalError checks if the error is due to a non-existent principal.
 func SNSNonExistentPrincipalError(err error) bool {
 	var paramErr *types.InvalidParameterException
 	return errors.As(err, &paramErr) && (strings.Contains(paramErr.ErrorMessage(), "PrincipalNotFound") || strings.Contains(paramErr.ErrorMessage(), "InvalidArn"))
