@@ -89,17 +89,16 @@ func (s *AccessPoint) Setup(ctx *utils.Context) error {
 }
 
 func (s *AccessPoint) ScanArn(ctx *utils.Context, arn string) (bool, error) {
-	policy, err := json.Marshal(GenerateTrustPolicy(s.accesspointArn, arn))
+	policy, err := json.Marshal(utils.GenerateTrustPolicy(s.accesspointArn, arn))
 	if err != nil {
 		return false, fmt.Errorf("marshalling policy: %w", err)
 	}
 
-	_, err = s.s3control.PutAccessPointPolicy(ctx, &s3control.PutAccessPointPolicyInput{
+	if _, err = s.s3control.PutAccessPointPolicy(ctx, &s3control.PutAccessPointPolicyInput{
 		AccountId: &s.AccountId,
 		Name:      &s.accessPointName,
 		Policy:    aws.String(string(policy)),
-	})
-	if err != nil {
+	}); err != nil {
 		oe := &smithy.GenericAPIError{}
 		if ok := errors.As(err, &oe); ok && oe.ErrorCode() == "MalformedPolicy" {
 			if strings.Contains(strings.ToLower(oe.ErrorMessage()), "invalid principal") {
@@ -173,22 +172,4 @@ func DeleteAccessPoint(ctx context.Context, api s3control.Client, name string, a
 	}
 
 	return nil
-}
-
-func GenerateTrustPolicy(accesspointArn string, arn string) utils.PolicyDocument {
-	document := utils.PolicyDocument{
-		Version: "2012-10-17",
-		Statement: []utils.PolicyStatement{
-			{
-				Sid:      "testrole",
-				Effect:   "Deny",
-				Action:   "*",
-				Resource: accesspointArn,
-				Principal: utils.PolicyPrincipal{
-					AWS: arn,
-				},
-			},
-		},
-	}
-	return document
 }

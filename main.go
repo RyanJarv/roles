@@ -8,13 +8,10 @@ package main
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"flag"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/account"
-	accountTypes "github.com/aws/aws-sdk-go-v2/service/account/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/ryanjarv/roles/pkg/arn"
 	"github.com/ryanjarv/roles/pkg/plugins"
@@ -23,7 +20,6 @@ import (
 	"github.com/samber/lo"
 	"os"
 	"strings"
-	"time"
 )
 
 //go:embed data/regions.list
@@ -161,50 +157,8 @@ func Setup(ctx *utils.Context, opts Opts) error {
 
 	ctx.Info.Printf("Enabling all regions, this can take a while...")
 
-	svc := account.NewFromConfig(cfg)
-	resp, err := svc.ListRegions(ctx, &account.ListRegionsInput{
-		RegionOptStatusContains: []accountTypes.RegionOptStatus{
-			accountTypes.RegionOptStatusDisabled,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("describing regions: %s", err)
-	}
-
-	for _, region := range resp.Regions {
-		for {
-			ctx.Info.Printf("Opting in to region %s", *region.RegionName)
-
-			var toManyReqs *accountTypes.TooManyRequestsException
-
-			if _, err := svc.EnableRegion(ctx, &account.EnableRegionInput{
-				RegionName: region.RegionName,
-			}); errors.As(err, &toManyReqs) {
-				ctx.Info.Printf("Too many requests, sleeping for 10 seconds")
-				time.Sleep(10 * time.Second)
-				continue
-			} else if err != nil {
-				return fmt.Errorf("enabling region %s: %s", *region.RegionName, err)
-			} else {
-				break
-			}
-		}
-	}
-
-	for {
-		time.Sleep(2 * time.Second)
-
-		if resp, err := svc.ListRegions(ctx, &account.ListRegionsInput{
-			RegionOptStatusContains: []accountTypes.RegionOptStatus{
-				accountTypes.RegionOptStatusEnabling,
-			},
-		}); err != nil {
-			return fmt.Errorf("describing regions: %s", err)
-		} else if len(resp.Regions) == 0 {
-			break
-		} else {
-			ctx.Info.Printf("Waiting for %d regions to finish enabling", len(resp.Regions))
-		}
+	if err := utils.EnableAllRegions(ctx, cfg); err != nil {
+		return fmt.Errorf("enabling all regions: %s", err)
 	}
 
 	cfgs, caller, err := utils.LoadConfigs(ctx, opts.profile)
