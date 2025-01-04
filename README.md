@@ -2,7 +2,7 @@
 
 Unauthenticated enumeration of AWS IAM Roles.
 
-TODO: Update this documentation.
+Currently around 1700 roles/second in EC2 w/ a single account.
 
 ## Build
 
