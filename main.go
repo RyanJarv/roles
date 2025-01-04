@@ -83,10 +83,10 @@ func main() {
 // Add new plugins here.
 func LoadAllPlugins(cfgs map[string]aws.Config, caller *sts.GetCallerIdentityOutput) [][]plugins.Plugin {
 	return [][]plugins.Plugin{
-		plugins.NewAccessPoints(cfgs, 5, plugins.NewAccessPointInput{
+		plugins.NewAccessPoints(cfgs, 4, plugins.NewAccessPointInput{
 			AccountId: *caller.Account,
 		}),
-		plugins.NewS3Buckets(cfgs, 5, plugins.NewS3BucketInput{
+		plugins.NewS3Buckets(cfgs, 4, plugins.NewS3BucketInput{
 			AccountId: *caller.Account,
 		}),
 		plugins.NewSNSTopics(cfgs, 5, plugins.NewSNSInput{
