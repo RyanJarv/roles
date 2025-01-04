@@ -43,10 +43,13 @@ make build
 
 ## Plugins
 
-The info below is mostly for passing to ChatGPT to generate new plugins. Just make sure to pass an example along with this info.
+The info below is mostly for passing to ChatGPT to generate new plugins. Just make sure to add the SNS plugin example to the end and update the first line with the plugin you want. 
+You'll want to put the new plugin in [./pkg/plugins](./pkg/plugins) and add the initializer function [here](https://github.com/RyanJarv/roles/blob/738d61ec197113e4d0d57664e46b4016527867d1/main.go#L86).
 
 ```
-Plugins can be put in [./pkg/plugins](./pkg/plugins). These should implement the plugin.Plugin interface:
+Based on the plugin description below, generate a plugin file for ...
+
+Plugins for [github.com/RyanJarv/roles](https://github.com/RyanJarv/roles) should implement the plugin.Plugin interface:
 
 type Plugin interface {
 	Name() string
@@ -126,5 +129,14 @@ func GenerateTrustPolicy(resourceArn, action, principalArn string) PolicyDocumen
 GenerateTrustPolicy takes the `resourceArn` of the current thread's Resource which will be updated, a valid action, and the principalArn which is currently being
 scanned. Each resource behaves slightly differently, but updating the resource policy will return succesfully if the specified `principalArn` exists, and a specific
 error if it does not.
+
+
+Below is an example of the SNS Plugin:
+
+```
+
+```
+
+
 
 ```
