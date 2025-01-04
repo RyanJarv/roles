@@ -10,7 +10,10 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/ryanjarv/roles/pkg/arn"
 	"github.com/ryanjarv/roles/pkg/plugins"
 	"github.com/ryanjarv/roles/pkg/scanner"
@@ -25,7 +28,6 @@ var regionsList string
 
 type Opts struct {
 	debug        bool
-	region       string
 	profile      string
 	name         string
 	rolesPath    string
@@ -33,13 +35,14 @@ type Opts struct {
 	accountsStr  string
 	concurrency  int
 	force        bool
+	clean        bool
 }
 
 func main() {
 	opts := Opts{}
 
 	flag.BoolVar(&opts.debug, "debug", false, "Enable debug logging")
-	flag.StringVar(&opts.region, "region", "us-east-1", "AWS region to use for scanning")
+	flag.BoolVar(&opts.clean, "clean", false, "Cleanup")
 	flag.StringVar(&opts.profile, "profile", "", "AWS profile to use for scanning")
 	flag.StringVar(&opts.name, "name", "default", "Name of the scan")
 	flag.StringVar(&opts.rolesPath, "roles", "", "Additional role names")
@@ -62,9 +65,9 @@ func main() {
 }
 
 func Run(ctx *utils.Context, opts Opts) error {
-	cfg, err := config.LoadDefaultConfig(ctx.Context, config.WithRegion(opts.region), config.WithSharedConfigProfile(opts.profile))
+	cfgs, caller, err := LoadConfigs(ctx, opts.profile)
 	if err != nil {
-		return fmt.Errorf("loading config: %s", err)
+		return fmt.Errorf("loading configs: %s", err)
 	}
 
 	storage, err := scanner.NewStorage(ctx, opts.name)
@@ -73,27 +76,22 @@ func Run(ctx *utils.Context, opts Opts) error {
 	}
 	defer storage.Close()
 
-	callerArn, accountId, err := utils.GetCallerInfo(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("getting caller info: %s", err)
-	}
-
-	ctx.Debug.Printf("callerArn: %s, accountId: %d", callerArn, accountId)
-
-	scan, err := scanner.NewScanner(ctx, &scanner.NewScannerInput{
-		Config:      cfg,
+	scan := scanner.NewScanner(&scanner.NewScannerInput{
 		Concurrency: opts.concurrency,
 		Storage:     storage,
 		Force:       opts.force,
-		Plugins: []plugins.Plugin{
-			plugins.NewAccessPoint(plugins.NewAccessPointInput{
-				Config:    cfg,
-				AccountId: accountId,
+		Plugins: [][]plugins.Plugin{
+			plugins.NewAccessPoints(cfgs, plugins.NewAccessPointInput{
+				AccountId: *caller.Account,
 			}),
 		},
 	})
-	if err != nil {
-		return fmt.Errorf("new scanner: %s", err)
+
+	if opts.clean {
+		if err := scan.CleanUp(ctx); err != nil {
+			return fmt.Errorf("cleaning up: %s", err)
+		}
+		return nil
 	}
 
 	scanData, err := arn.GetArns(ctx, &arn.GetArnsInput{
@@ -117,4 +115,32 @@ func Run(ctx *utils.Context, opts Opts) error {
 	}
 
 	return nil
+}
+
+func LoadConfigs(ctx *utils.Context, profile string) (map[string]aws.Config, *sts.GetCallerIdentityOutput, error) {
+	cfg, err := config.LoadDefaultConfig(ctx.Context, config.WithRegion("us-east-1"), config.WithSharedConfigProfile(profile))
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading config: %s", err)
+	}
+
+	caller, err := utils.GetCallerInfo(ctx, cfg)
+	if err != nil {
+		return nil, caller, fmt.Errorf("getting caller info: %s", err)
+	}
+
+	regions, err := ec2.NewFromConfig(cfg).DescribeRegions(ctx, &ec2.DescribeRegionsInput{})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cfgs := make(map[string]aws.Config, len(regions.Regions))
+	for _, region := range regions.Regions {
+		cfgCopy := cfg.Copy()
+		cfgCopy.Region = *region.RegionName
+		cfgs[*region.RegionName] = cfgCopy
+	}
+
+	ctx.Debug.Printf("callerArn: %s, accountId: %s", *caller.Arn, *caller.Account)
+
+	return cfgs, caller, nil
 }

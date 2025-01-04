@@ -8,3 +8,7 @@ type Plugin interface {
 	Setup(ctx *utils.Context) error
 	ScanArn(ctx *utils.Context, arn string) (bool, error)
 }
+
+type CleanUpPlugin interface {
+	CleanUp(ctx *utils.Context) error
+}

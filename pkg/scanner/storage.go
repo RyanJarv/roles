@@ -26,17 +26,17 @@ func NewStorage(ctx *utils.Context, name string) (*Storage, error) {
 
 	storage := &Storage{
 		mux:      sync.Mutex{},
-		name:     name,
 		data:     map[string]bool{},
 		dataPath: dataPath,
 		lockPath: dataPath + ".lock",
 	}
 
 	utils.RunOnSigterm(ctx, func(ctx *utils.Context) {
-		err := storage.Save()
-		if err != nil {
+		if err := storage.Save(); err != nil {
 			ctx.Error.Printf("saving data: %s", err)
 		}
+
+		ctx.Info.Printf("saved data")
 
 		if err := storage.Close(); err != nil {
 			ctx.Error.Printf("closing storage: %s", err)
@@ -53,7 +53,6 @@ func NewStorage(ctx *utils.Context, name string) (*Storage, error) {
 type Storage struct {
 	mux      sync.Mutex
 	data     map[string]bool
-	name     string
 	dataPath string
 	lockPath string
 }
@@ -90,20 +89,15 @@ func (s *Storage) Load(ctx *utils.Context) error {
 }
 
 func (s *Storage) Save() error {
-	path, err := utils.ExpandPath(fmt.Sprintf("~/.roles/%s.json", s.name))
-	if err != nil {
-		return fmt.Errorf("expanding path: %s", err)
-	}
-
 	s.mux.Lock()
 	defer s.mux.Unlock()
 
-	data, err := json.Marshal(s.data)
+	data, err := json.MarshalIndent(s.data, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshalling data: %s", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.WriteFile(s.dataPath, data, 0o600); err != nil {
 		return fmt.Errorf("writing data: %s", err)
 	}
 

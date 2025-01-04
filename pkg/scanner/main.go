@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/ryanjarv/roles/pkg/plugins"
 	"github.com/ryanjarv/roles/pkg/utils"
@@ -13,21 +12,18 @@ import (
 const ConcurrencyMultiplier = 1
 
 type NewScannerInput struct {
-	Config      aws.Config
 	Concurrency int
 	Storage     *Storage
-	Plugins     []plugins.Plugin
+	Plugins     [][]plugins.Plugin
 	Force       bool
 }
 
-func NewScanner(ctx *utils.Context, input *NewScannerInput) (*Scanner, error) {
-	scanner := &Scanner{
+func NewScanner(input *NewScannerInput) *Scanner {
+	return &Scanner{
 		storage: input.Storage,
 		force:   input.Force,
-		Plugins: input.Plugins,
+		Plugins: utils.FlattenList(input.Plugins),
 	}
-
-	return scanner, nil
 }
 
 type Scanner struct {
@@ -70,7 +66,9 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 		}
 
 		if len(rootArnsToScan) > 0 {
-			for root := range scanWithPlugins(ctx, rootArnsToScan, s.Plugins) {
+			ctx.Info.Printf("Scanning %d root ARNs", len(rootArnsToScan))
+
+			for root := range scanWithPlugins(ctx, s.Plugins, rootArnsToScan) {
 				if root.Exists {
 					allAccountArns = append(allAccountArns, rootArnMap[root.Arn]...)
 				}
@@ -100,7 +98,9 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 		}
 
 		if len(accountArnsToScan) > 0 {
-			for result := range scanWithPlugins(ctx, accountArnsToScan, s.Plugins) {
+			ctx.Info.Printf("Scanning %d account ARNs", len(accountArnsToScan))
+
+			for result := range scanWithPlugins(ctx, s.Plugins, accountArnsToScan) {
 				s.storage.Set(result.Arn, result.Exists)
 
 				if !yield(result.Arn, result.Exists) {
@@ -111,32 +111,49 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 	}
 }
 
-func scanWithPlugins(ctx *utils.Context, principalArns []string, plugins []plugins.Plugin) chan Result {
+func (s *Scanner) CleanUp(ctx *utils.Context) error {
+	for _, plugin := range s.Plugins {
+		if p, ok := plugin.(plugins.CleanUpPlugin); ok {
+			ctx.Info.Printf("cleaning up %s", plugin.Name())
+			if err := p.CleanUp(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns []string) chan Result {
 	queueSize := 0
 	for _, plugin := range plugins {
 		queueSize += plugin.Concurrency() * 2 * ConcurrencyMultiplier
 	}
 
+	ctx.Debug.Printf("queue size: %d", queueSize)
+
 	input := make(chan string, queueSize)
 	results := make(chan Result, queueSize)
 
+	MustSetupPlugins(ctx, plugins)
+
 	// Close the results channel when all plugins are done processing input.
 	wg := sync.WaitGroup{}
-
 	for _, plugin := range plugins {
-		if err := plugin.Setup(ctx); err != nil {
-			ctx.Error.Fatalf("%s: setting up plugin: %s", plugin.Name(), err)
-		}
-
 		for i := 0; i < plugin.Concurrency(); i++ {
 			wg.Add(1)
 
 			go func(i int) {
-				for arn := range input {
-					if exists, err := plugin.ScanArn(ctx, arn); err != nil {
-						ctx.Error.Fatalf("%s-%d: scanning: %s", plugin.Name(), i, err)
+				for principalArn := range input {
+					if exists, err := plugin.ScanArn(ctx, principalArn); err != nil {
+						ctx.Error.Printf("%s-%d: scanning: %s", plugin.Name(), i, err)
 					} else {
-						results <- Result{Arn: arn, Exists: exists}
+						if exists {
+							ctx.Debug.Printf("thread %d found: %s", i, principalArn)
+						} else {
+							ctx.Debug.Printf("thread %d not found: %s", i, principalArn)
+						}
+
+						results <- Result{Arn: principalArn, Exists: exists}
 					}
 				}
 				ctx.Debug.Printf("%s-%d: finished processing input", plugin.Name(), i)
@@ -158,6 +175,23 @@ func scanWithPlugins(ctx *utils.Context, principalArns []string, plugins []plugi
 		close(results)
 	}()
 	return results
+}
+
+func MustSetupPlugins(ctx *utils.Context, plugins []plugins.Plugin) {
+	setupWg := sync.WaitGroup{}
+
+	for _, plugin := range plugins {
+		setupWg.Add(1)
+		go func() {
+			if err := plugin.Setup(ctx); err != nil {
+				ctx.Error.Fatalf("%s: setting up plugin: %s", plugin.Name(), err)
+			}
+			setupWg.Done()
+		}()
+	}
+
+	// Wait for all plugins to finish setting up.
+	setupWg.Wait()
 }
 
 func RootArnMap(ctx *utils.Context, principalArns []string) map[string][]string {

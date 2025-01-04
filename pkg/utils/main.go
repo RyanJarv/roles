@@ -3,7 +3,6 @@ package utils
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -228,74 +227,6 @@ func RandStringRunes(n int) string {
 	}
 	return string(b)
 }
-func Load(name string, account string) (map[string]Info, error) {
-	all, err := loadAll(name)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, ok := all[account]; !ok {
-		all[account] = map[string]Info{}
-	}
-
-	return all[account], nil
-}
-
-func loadAll(name string) (map[string]map[string]Info, error) {
-	path, err := ExpandPath(fmt.Sprintf("~/.roles/%s.json", name))
-	if err != nil {
-		return nil, err
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
-	}
-	if _, s := os.Stat(path); os.IsNotExist(s) {
-		if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
-			return nil, err
-		}
-	}
-
-	var data []byte
-	data, err = os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	results := map[string]map[string]Info{}
-	if err := json.Unmarshal(data, &results); err != nil {
-		return nil, err
-	}
-
-	return results, nil
-}
-
-func Save(ctx *Context, name string, account string, results map[string]Info) {
-	if len(results) == 0 {
-		ctx.Info.Printf("no results to save, refusing to overwrite data")
-	}
-
-	path, err := ExpandPath(fmt.Sprintf("~/.roles/%s.json", name))
-	if err != nil {
-		ctx.Error.Fatalf("expanding path: %s", err)
-	}
-
-	all, err := loadAll(name)
-	if err != nil {
-		ctx.Error.Fatalf("loading previous: %s", err)
-	}
-
-	all[account] = results
-
-	data, err := json.Marshal(all)
-	if err != nil {
-		ctx.Error.Fatalf("marshalling data: %s", err)
-	}
-
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		ctx.Error.Fatalf("writing data: %s", err)
-	}
-}
 
 func RunOnSigterm(ctx *Context, f func(*Context)) {
 	signalChannel := make(chan os.Signal, 2)
@@ -316,10 +247,18 @@ func RunOnSigterm(ctx *Context, f func(*Context)) {
 	}()
 }
 
-func GetCallerInfo(ctx *Context, cfg aws.Config) (string, string, error) {
+func GetCallerInfo(ctx *Context, cfg aws.Config) (*sts.GetCallerIdentityOutput, error) {
 	resp, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return "", "", fmt.Errorf("getting caller identity: %w", err)
+		return nil, fmt.Errorf("getting caller identity: %w", err)
 	}
-	return *resp.Arn, *resp.Account, nil
+	return resp, nil
+}
+
+func FlattenList[T any](v [][]T) []T {
+	var result []T
+	for _, vv := range v {
+		result = append(result, vv...)
+	}
+	return result
 }

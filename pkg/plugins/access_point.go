@@ -16,25 +16,25 @@ import (
 )
 
 type NewAccessPointInput struct {
-	Config    aws.Config
 	AccountId string
 }
 
-func NewAccessPoint(input NewAccessPointInput) *AccessPoint {
-	region := "us-east-1"
+// NewAccessPoints creates a new access point plugin for each region.
+func NewAccessPoints(cfgs map[string]aws.Config, input NewAccessPointInput) []Plugin {
+	results := []Plugin{}
 
-	if input.Config.Region != "" {
-		region = input.Config.Region
+	for region, cfg := range cfgs {
+		results = append(results, &AccessPoint{
+			NewAccessPointInput: input,
+			AccessPointName:     fmt.Sprintf("role-%s", region),
+			BucketName:          fmt.Sprintf("role-fh9283f-bucket-%s-%s", cfg.Region, input.AccountId),
+			Region:              region,
+			s3:                  s3.NewFromConfig(cfg),
+			s3control:           s3control.NewFromConfig(cfg),
+		})
 	}
 
-	return &AccessPoint{
-		NewAccessPointInput: input,
-		AccessPointName:     fmt.Sprintf("role-%s-%s", region, input.AccountId),
-		BucketName:          fmt.Sprintf("role-fh9283f-bucket-%s-%s", input.Config.Region, input.AccountId),
-		Region:              region,
-		s3:                  s3.NewFromConfig(input.Config),
-		s3control:           s3control.NewFromConfig(input.Config),
-	}
+	return results
 }
 
 type AccessPoint struct {
@@ -46,9 +46,12 @@ type AccessPoint struct {
 	BucketName      string
 }
 
-func (s *AccessPoint) Name() string     { return "access-point" }
+func (s *AccessPoint) Name() string { return fmt.Sprintf("access-point-%s", s.Region) }
+
+// Concurrency returns the number of concurrent requests to make per region.
 func (s *AccessPoint) Concurrency() int { return 5 }
 
+// Setup creates the bucket for this region if it doesn't exist.
 func (s *AccessPoint) Setup(ctx *utils.Context) error {
 	var conf *s3Types.CreateBucketConfiguration
 
@@ -63,7 +66,10 @@ func (s *AccessPoint) Setup(ctx *utils.Context) error {
 		Bucket:                    &s.BucketName,
 		CreateBucketConfiguration: conf,
 	}); err != nil {
-		if oe, ok := err.(smithy.APIError); !ok || oe.ErrorCode() != "BucketAlreadyOwnedByYou" {
+		var yourBucketErr *s3Types.BucketAlreadyOwnedByYou
+		if ok := errors.As(err, &yourBucketErr); ok {
+			ctx.Debug.Printf("bucket already owned by us: %s", s.BucketName)
+		} else {
 			return fmt.Errorf("setup bucket: %w", err)
 		}
 	}
@@ -71,7 +77,7 @@ func (s *AccessPoint) Setup(ctx *utils.Context) error {
 }
 
 func (s *AccessPoint) ScanArn(ctx *utils.Context, arn string) (bool, error) {
-	name := fmt.Sprintf("%s-%s-%s", s.AccessPointName, s.Region, utils.RandStringRunes(12))
+	name := fmt.Sprintf("%s-%s", s.AccessPointName, utils.RandStringRunes(16))
 	accesspointArn, err := SetupAccessPoint(ctx, s.s3control, name, s.AccountId, s.BucketName)
 	if err != nil {
 		return false, err
@@ -97,15 +103,32 @@ func (s *AccessPoint) ScanArn(ctx *utils.Context, arn string) (bool, error) {
 		oe := &smithy.GenericAPIError{}
 		if ok := errors.As(err, &oe); ok && oe.ErrorCode() == "MalformedPolicy" {
 			if strings.Contains(strings.ToLower(oe.ErrorMessage()), "invalid principal") {
-				ctx.Debug.Printf("not found: %s", arn)
 				return false, nil
 			}
 		}
 		return false, fmt.Errorf("updating policy: %w", err)
 	}
 
-	ctx.Debug.Printf("found: %s", arn)
 	return true, nil
+}
+
+func (s *AccessPoint) CleanUp(ctx *utils.Context) error {
+	points, err := s.s3control.ListAccessPoints(ctx, &s3control.ListAccessPointsInput{
+		AccountId: &s.AccountId,
+		Bucket:    &s.BucketName,
+	})
+	if err != nil {
+		return fmt.Errorf("listing access points: %w", err)
+	}
+
+	for _, point := range points.AccessPointList {
+		ctx.Debug.Printf("deleting up accesspoint %s", *point.Name)
+		if err := DeleteAccessPoint(ctx, *s.s3control, *point.Name, s.AccountId); err != nil {
+			ctx.Error.Printf("deleting accesspoint: %s", err)
+		}
+	}
+
+	return nil
 }
 
 func SetupAccessPoint(ctx context.Context, api *s3control.Client, name, account, bucket string) (string, error) {
