@@ -133,10 +133,8 @@ error if it does not.
 
 Below is an example of the SNS Plugin:
 
-```
 
-```
-
+... add SNS plugin code here ...
 
 
 ```
