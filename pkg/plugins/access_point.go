@@ -1,7 +1,6 @@
 package plugins
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,27 +14,22 @@ import (
 	"strings"
 )
 
-type NewAccessPointInput struct {
-	AccountId string
-}
-
 // NewAccessPoints creates a new access point plugin for each region.
-func NewAccessPoints(cfgs map[string]aws.Config, concurrency int, input NewAccessPointInput) []Plugin {
+func NewAccessPoints(cfgs map[string]utils.ThreadConfig, concurrency int) []Plugin {
 	results := []Plugin{}
 
-	for region, cfg := range cfgs {
+	for name, cfg := range cfgs {
 		for i := 0; i < concurrency; i++ {
-			accessPointName := fmt.Sprintf("role-%s-%d", region, i)
+			accessPointName := fmt.Sprintf("role-%s-%d", name, i)
 			results = append(results, &AccessPoint{
-				NewAccessPointInput: input,
-				thread:              i,
+				ThreadConfig: cfg,
 				// Make sure each thread has its own unique bucket and access point name.
 				accessPointName: accessPointName,
-				bucketName:      fmt.Sprintf("role-fh9283f-s3-access-points-%s-%s-%d", cfg.Region, input.AccountId, i),
-				region:          region,
-				s3:              s3.NewFromConfig(cfg),
-				s3control:       s3control.NewFromConfig(cfg),
-				accesspointArn:  fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", region, input.AccountId, accessPointName),
+				bucketName:      fmt.Sprintf("role-fh9283f-s3-access-points-%s-%s-%d", cfg.Region, cfg.AccountId, i),
+				thread:          i,
+				s3:              s3.NewFromConfig(cfg.Config),
+				s3control:       s3control.NewFromConfig(cfg.Config),
+				accesspointArn:  fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", name, cfg.AccountId, accessPointName),
 			})
 		}
 	}
@@ -44,28 +38,31 @@ func NewAccessPoints(cfgs map[string]aws.Config, concurrency int, input NewAcces
 }
 
 type AccessPoint struct {
-	NewAccessPointInput
+	utils.ThreadConfig
 	thread          int
 	s3              *s3.Client
 	s3control       *s3control.Client
-	region          string
 	accessPointName string
 	bucketName      string
 	accesspointArn  string
 }
 
-func (s *AccessPoint) Name() string { return fmt.Sprintf("access-point-%s-%d", s.region, s.thread) }
+func (s *AccessPoint) Name() string {
+	return fmt.Sprintf("access-point-%s-%s-%d", s.AccountId, s.Region, s.thread)
+}
 
 // Setup creates the bucket for this region if it doesn't exist.
 func (s *AccessPoint) Setup(ctx *utils.Context) error {
 	var conf *s3Types.CreateBucketConfiguration
 
-	// This shit is fucking wild, us-east-1 isn't a valid region here. Who do these people even think they are?
-	if s.region != "us-east-1" {
+	// us-east-1 doesn't need a LocationConstraint.
+	if s.Region != "us-east-1" {
 		conf = &s3Types.CreateBucketConfiguration{
-			LocationConstraint: s3Types.BucketLocationConstraint(s.region),
+			LocationConstraint: s3Types.BucketLocationConstraint(s.Region),
 		}
 	}
+
+	ctx.Debug.Printf("creating S3 bucket %s", s.bucketName)
 
 	if _, err := s.s3.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket:                    &s.bucketName,
@@ -79,14 +76,15 @@ func (s *AccessPoint) Setup(ctx *utils.Context) error {
 		}
 	}
 
-	if _, err := setupAccessPoint(ctx, s.s3control, s.accessPointName, s.AccountId, s.bucketName); err != nil {
+	if _, err := setupAccessPoint(ctx, s.s3control, s.accessPointName, s.bucketName, s.AccountId); err != nil {
 		return fmt.Errorf("setup access point: %w", err)
 	}
 
 	return nil
 }
 
-func setupAccessPoint(ctx context.Context, api *s3control.Client, name, account, bucket string) (string, error) {
+func setupAccessPoint(ctx *utils.Context, api *s3control.Client, name, bucket, account string) (string, error) {
+	ctx.Debug.Printf("creating access point %s", name)
 	accessPoint, err := api.CreateAccessPoint(ctx, &s3control.CreateAccessPointInput{
 		Name:            &name,
 		AccountId:       &account,

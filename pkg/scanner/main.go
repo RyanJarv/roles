@@ -111,12 +111,6 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 }
 
 func (s *Scanner) CleanUp(ctx *utils.Context) error {
-	for _, p := range s.Plugins {
-		ctx.Info.Printf("cleaning up %s", p.Name())
-		if err := p.CleanUp(ctx); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -194,24 +188,6 @@ func LogStats(ctx *utils.Context, processed *int) context.CancelFunc {
 	}()
 
 	return cancelFunc
-}
-
-func (s *Scanner) SetupPlugins(ctx *utils.Context) {
-	setupWg := sync.WaitGroup{}
-
-	for _, plugin := range s.Plugins {
-		setupWg.Add(1)
-		go func() {
-			if err := plugin.Setup(ctx); err != nil {
-				ctx.Error.Fatalf("%s: setup: %s", plugin.Name(), err)
-			}
-			ctx.Info.Printf("%s: setup complete", plugin.Name())
-			setupWg.Done()
-		}()
-	}
-
-	// Wait for all plugins to finish setting up.
-	setupWg.Wait()
 }
 
 func RootArnMap(ctx *utils.Context, principalArns []string) map[string][]string {

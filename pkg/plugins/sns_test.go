@@ -57,18 +57,14 @@ func (m *mockSNSClient) DeleteTopic(
 
 // TestNewSNSTopics tests the plugin creation logic (for each region/thread).
 func TestNewSNSTopics(t *testing.T) {
-	input := NewSNSInput{
-		AccountId: "123456789012",
-	}
-
 	// Suppose we have two regions. For concurrency=2, that means we expect 2 threads per region -> 4 total plugins.
-	cfgs := map[string]aws.Config{
+	cfgs := map[string]utils.ThreadConfig{
 		"us-east-1": {},
 		"us-west-2": {},
 	}
 	concurrency := 2
 
-	plugins := NewSNSTopics(cfgs, concurrency, input)
+	plugins := NewSNSTopics(cfgs, concurrency)
 
 	// We should have 4 plugins in total.
 	require.Len(t, plugins, 4)
@@ -76,14 +72,14 @@ func TestNewSNSTopics(t *testing.T) {
 	// Inspect a few plugin attributes.
 	// The first plugin should be region=us-east-1, thread=0
 	sns0 := plugins[0].(*SNSTopic)
-	assert.Equal(t, "us-east-1", sns0.region)
+	assert.Equal(t, "us-east-1", sns0.Region)
 	assert.Equal(t, 0, sns0.thread)
 	assert.Equal(t, "role-fh9283f-sns-us-east-1-123456789012-0", sns0.topicName)
 	assert.Equal(t, "arn:aws:sns:us-east-1:123456789012:role-fh9283f-sns-us-east-1-123456789012-0", sns0.topicArn)
 
 	// The last plugin should be region=us-west-2, thread=1
 	sns3 := plugins[3].(*SNSTopic)
-	assert.Equal(t, "us-west-2", sns3.region)
+	assert.Equal(t, "us-west-2", sns3.Region)
 	assert.Equal(t, 1, sns3.thread)
 	assert.Equal(t, "role-fh9283f-sns-us-west-2-123456789012-1", sns3.topicName)
 }
@@ -92,11 +88,7 @@ func TestNewSNSTopics(t *testing.T) {
 func TestSNSTopicSetup(t *testing.T) {
 	mockClient := &mockSNSClient{}
 	topic := &SNSTopic{
-		NewSNSInput: NewSNSInput{
-			AccountId: "123456789012",
-		},
 		thread:    0,
-		region:    "us-east-1",
 		topicName: "role-fh9283f-sns-us-east-1-123456789012-0",
 		topicArn:  "arn:aws:sns:us-east-1:123456789012:role-fh9283f-sns-us-east-1-123456789012-0",
 		snsClient: mockClient,
@@ -121,11 +113,7 @@ func TestSNSTopicSetup(t *testing.T) {
 func TestSNSTopicScanArn(t *testing.T) {
 	mockClient := &mockSNSClient{}
 	topic := &SNSTopic{
-		NewSNSInput: NewSNSInput{
-			AccountId: "123456789012",
-		},
 		thread:    0,
-		region:    "us-east-1",
 		topicName: "role-fh9283f-sns-us-east-1-123456789012-0",
 		topicArn:  "arn:aws:sns:us-east-1:123456789012:role-fh9283f-sns-us-east-1-123456789012-0",
 		snsClient: mockClient,
@@ -163,11 +151,7 @@ func TestSNSTopicScanArn(t *testing.T) {
 func TestSNSTopicCleanUp(t *testing.T) {
 	mockClient := &mockSNSClient{}
 	topic := &SNSTopic{
-		NewSNSInput: NewSNSInput{
-			AccountId: "123456789012",
-		},
 		thread:    0,
-		region:    "us-east-1",
 		topicName: "role-fh9283f-sns-us-east-1-123456789012-0",
 		topicArn:  "arn:aws:sns:us-east-1:123456789012:role-fh9283f-sns-us-east-1-123456789012-0",
 		snsClient: mockClient,
@@ -191,7 +175,6 @@ func TestSNSTopicCleanUp(t *testing.T) {
 // Example test that verifies the Name() method produces the expected string.
 func TestSNSTopicName(t *testing.T) {
 	topic := &SNSTopic{
-		region: "us-west-2",
 		thread: 3,
 	}
 	assert.Equal(t, "sns-us-west-2-3", topic.Name())

@@ -12,11 +12,6 @@ import (
 	"github.com/ryanjarv/roles/pkg/utils"
 )
 
-// NewECRPublicInput holds the parameters necessary to create new ECR Public plugins.
-type NewECRPublicInput struct {
-	AccountId string
-}
-
 // KnownECRPublicRegions is a list (or map) of regions where ECR Public endpoints actually exist.
 // Realistically, ECR Public is often regionless (us-east-1-like endpoint). You could keep it
 // to just "us-east-1" or add others if AWS adds them in the future.
@@ -25,25 +20,30 @@ var KnownECRPublicRegions = map[string]bool{
 }
 
 // NewECRPublicRepositories creates a new ECR Public plugin for each region/thread.
-func NewECRPublicRepositories(cfgs map[string]aws.Config, concurrency int, input NewECRPublicInput) []Plugin {
+func NewECRPublicRepositories(cfgs map[string]utils.ThreadConfig, concurrency int) []Plugin {
 	var results []Plugin
 
 	// ECR public only supports us-east-1, there is an us-west-2 endpoint, but it doesn't support the CreateRepository
 	// and SetRepositoryPolicy operations.
-	region := "us-east-1"
-	ecrPublicClient := ecrpublic.NewFromConfig(cfgs[region])
 
-	for i := 0; i < concurrency; i++ {
-		repositoryName := fmt.Sprintf("role-fh9283f-ecr-public-%s-%s-%d", region, input.AccountId, i)
-		// Construct the ARN deterministically
-		results = append(results, &ECRPublicRepository{
-			NewECRPublicInput: input,
-			thread:            i,
-			region:            region,
-			repositoryName:    repositoryName,
-			repositoryArn:     fmt.Sprintf("arn:aws:ecr-public::%s:repository/%s", input.AccountId, repositoryName),
-			client:            ecrPublicClient,
-		})
+	for _, cfg := range cfgs {
+		// Skip regions that don't support ECR Public
+		if cfg.Region != "us-east-1" {
+			continue
+		}
+		ecrPublicClient := ecrpublic.NewFromConfig(cfg.Config)
+
+		for i := 0; i < concurrency; i++ {
+			repositoryName := fmt.Sprintf("role-fh9283f-ecr-public-%s-%s-%d", cfg.Region, cfg.AccountId, i)
+			// Construct the ARN deterministically
+			results = append(results, &ECRPublicRepository{
+				ThreadConfig:   cfg,
+				thread:         i,
+				repositoryName: repositoryName,
+				repositoryArn:  fmt.Sprintf("arn:aws:ecr-public::%s:repository/%s", cfg.AccountId, repositoryName),
+				client:         ecrPublicClient,
+			})
+		}
 	}
 
 	return results
@@ -51,10 +51,8 @@ func NewECRPublicRepositories(cfgs map[string]aws.Config, concurrency int, input
 
 // ECRPublicRepository implements the Plugin interface for ECR Public.
 type ECRPublicRepository struct {
-	NewECRPublicInput
-
+	utils.ThreadConfig
 	thread         int
-	region         string
 	repositoryName string
 	repositoryArn  string
 
@@ -63,13 +61,13 @@ type ECRPublicRepository struct {
 
 // Name returns a unique name for this plugin instance.
 func (r *ECRPublicRepository) Name() string {
-	return fmt.Sprintf("ecr-public-%s-%d", r.region, r.thread)
+	return fmt.Sprintf("ecr-public-%s-%d", r.Region, r.thread)
 }
 
 // Setup creates the ECR Public repository if it doesn't already exist.
 func (r *ECRPublicRepository) Setup(ctx *utils.Context) error {
-	// Attempt to create the repository.
-	// If the repository already exists from a previous run, handle that error gracefully.
+	// Attempt to create the repository if it doesn't already exist.
+	ctx.Debug.Printf("creating ECR Public repository %s", r.repositoryName)
 	_, err := r.client.CreateRepository(ctx, &ecrpublic.CreateRepositoryInput{
 		RepositoryName: &r.repositoryName,
 	})
@@ -109,7 +107,10 @@ func (r *ECRPublicRepository) CleanUp(ctx *utils.Context) error {
 	_, err := r.client.DeleteRepository(ctx, &ecrpublic.DeleteRepositoryInput{
 		RepositoryName: &r.repositoryName,
 	})
-	if err != nil {
+	var notFoundErr *types.RepositoryNotFoundException
+	if errors.As(err, &notFoundErr) {
+		ctx.Debug.Printf("repository %s not found, skipping", r.repositoryName)
+	} else if err != nil {
 		return fmt.Errorf("deleting repository: %w", err)
 	}
 

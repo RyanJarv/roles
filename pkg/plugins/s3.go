@@ -18,17 +18,16 @@ type NewS3BucketInput struct {
 }
 
 // NewS3Buckets creates a new S3 plugin for each region/thread.
-func NewS3Buckets(cfgs map[string]aws.Config, concurrency int, input NewS3BucketInput) []Plugin {
+func NewS3Buckets(cfgs map[string]utils.ThreadConfig, concurrency int) []Plugin {
 	results := []Plugin{}
 
-	for region, cfg := range cfgs {
+	for _, cfg := range cfgs {
 		for i := 0; i < concurrency; i++ {
 			results = append(results, &S3Bucket{
-				NewS3BucketInput: input,
-				thread:           i,
-				region:           region,
-				bucketName:       fmt.Sprintf("role-fh9283f-s3-bucket-%s-%s-%d", region, input.AccountId, i),
-				s3Client:         s3.NewFromConfig(cfg),
+				ThreadConfig: cfg,
+				thread:       i,
+				bucketName:   fmt.Sprintf("role-fh9283f-s3-bucket-%s-%s-%d", cfg.Region, cfg.AccountId, i),
+				s3Client:     s3.NewFromConfig(cfg.Config),
 			})
 		}
 	}
@@ -37,15 +36,14 @@ func NewS3Buckets(cfgs map[string]aws.Config, concurrency int, input NewS3Bucket
 }
 
 type S3Bucket struct {
-	NewS3BucketInput
-	thread     int
-	region     string
+	utils.ThreadConfig
 	bucketName string
 	s3Client   *s3.Client
+	thread     int
 }
 
 func (s *S3Bucket) Name() string {
-	return fmt.Sprintf("s3-%s-%d", s.region, s.thread)
+	return fmt.Sprintf("s3-%s-%s-%d", s.AccountId, s.Region, s.thread)
 }
 
 // Setup creates the S3 bucket if it doesn't already exist.
@@ -53,9 +51,9 @@ func (s *S3Bucket) Setup(ctx *utils.Context) error {
 	var conf *s3Types.CreateBucketConfiguration
 
 	// us-east-1 doesn't need a LocationConstraint.
-	if s.region != "us-east-1" {
+	if s.Region != "us-east-1" {
 		conf = &s3Types.CreateBucketConfiguration{
-			LocationConstraint: s3Types.BucketLocationConstraint(s.region),
+			LocationConstraint: s3Types.BucketLocationConstraint(s.Region),
 		}
 	}
 
@@ -69,7 +67,7 @@ func (s *S3Bucket) Setup(ctx *utils.Context) error {
 		if errors.As(err, &ownedErr) {
 			ctx.Debug.Printf("Bucket already owned by us: %s", s.bucketName)
 		} else {
-			return fmt.Errorf("create bucket: %w", err)
+			return fmt.Errorf("create bucket %s: %w", s.Name(), err)
 		}
 	}
 	return nil

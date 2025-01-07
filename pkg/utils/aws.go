@@ -4,39 +4,42 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/account"
 	"github.com/aws/aws-sdk-go-v2/service/account/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"strings"
 	"time"
 )
 
-func LoadConfigs(ctx *Context, profile string) (map[string]aws.Config, *sts.GetCallerIdentityOutput, error) {
-	cfg, err := config.LoadDefaultConfig(ctx.Context, config.WithRegion("us-east-1"), config.WithSharedConfigProfile(profile))
-	if err != nil {
-		return nil, nil, fmt.Errorf("loading config: %s", err)
+type ThreadConfig struct {
+	AccountId string
+	Config    aws.Config
+	Region    string
+}
+
+func LoadConfigs(ctx *Context, accounts map[string]Account) (map[string]ThreadConfig, error) {
+	cfgs := map[string]ThreadConfig{}
+
+	for _, v := range accounts {
+		regions, err := GetAllEnabledRegions(ctx, v.Config)
+		if err != nil {
+			return nil, fmt.Errorf("getting enabled regions: %s", err)
+		}
+
+		for _, region := range regions {
+			newCfg := v.Config.Copy()
+			newCfg.Region = *region.RegionName
+			cfgs[fmt.Sprintf("%s-%s", v.AccountId, *region.RegionName)] = ThreadConfig{
+				AccountId: v.AccountId,
+				Config:    newCfg,
+				Region:    *region.RegionName,
+			}
+		}
+
+		ctx.Info.Printf("loaded %d regions in account %s", len(regions), v.AccountId)
 	}
 
-	caller, err := GetCallerInfo(ctx, cfg)
-	if err != nil {
-		return nil, caller, fmt.Errorf("getting caller info: %s", err)
-	}
-
-	regions, err := GetAllEnabledRegions(ctx, cfg)
-	if err != nil {
-		return nil, nil, fmt.Errorf("getting enabled regions: %s", err)
-	}
-
-	cfgs := make(map[string]aws.Config, len(regions))
-	for _, region := range regions {
-		cfgCopy := cfg.Copy()
-		cfgCopy.Region = *region.RegionName
-		cfgs[*region.RegionName] = cfgCopy
-	}
-
-	ctx.Debug.Printf("callerArn: %s, accountId: %s", *caller.Arn, *caller.Account)
-
-	return cfgs, caller, nil
+	return cfgs, nil
 }
 
 func GetAllEnabledRegions(ctx *Context, cfg aws.Config) ([]types.Region, error) {
@@ -133,5 +136,18 @@ func GenerateTrustPolicy(resourceArn, action, principalArn string) PolicyDocumen
 				},
 			},
 		},
+	}
+}
+
+func GenerateSubAccountEmail(email string, postfix string) string {
+	p := strings.Split(email, "@")
+	if len(p) != 2 {
+		// This probably shouldn't happen.
+		panic(fmt.Errorf("invalid email: %s", email))
+	}
+	if strings.Contains(p[0], "+") {
+		return fmt.Sprintf("%s-%s@%s", p[0], postfix, p[1])
+	} else {
+		return fmt.Sprintf("%s+%s@%s", p[0], postfix, p[1])
 	}
 }

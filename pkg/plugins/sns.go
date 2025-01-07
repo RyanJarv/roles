@@ -11,28 +11,23 @@ import (
 	"strings"
 )
 
-type NewSNSInput struct {
-	AccountId string
-}
-
 // NewSNSTopics creates a new SNS plugin for each region/thread.
-func NewSNSTopics(cfgs map[string]aws.Config, concurrency int, input NewSNSInput) []Plugin {
+func NewSNSTopics(cfgs map[string]utils.ThreadConfig, concurrency int) []Plugin {
 	var results []Plugin
 
-	for region, cfg := range cfgs {
+	for _, cfg := range cfgs {
 		// Create a single sns.Client per region
-		snsClient := sns.NewFromConfig(cfg)
+		snsClient := sns.NewFromConfig(cfg.Config)
 
 		for i := 0; i < concurrency; i++ {
-			topicName := fmt.Sprintf("role-fh9283f-sns-%s-%s-%d", region, input.AccountId, i)
+			topicName := fmt.Sprintf("role-fh9283f-sns-%s-%s-%d", cfg.Region, cfg.AccountId, i)
 
 			results = append(results, &SNSTopic{
-				NewSNSInput: input,
-				thread:      i,
-				region:      region,
-				topicName:   topicName,
-				topicArn:    fmt.Sprintf("arn:aws:sns:%s:%s:%s", region, input.AccountId, topicName),
-				snsClient:   snsClient,
+				ThreadConfig: cfg,
+				thread:       i,
+				topicName:    topicName,
+				topicArn:     fmt.Sprintf("arn:aws:sns:%s:%s:%s", cfg.Region, cfg.AccountId, topicName),
+				snsClient:    snsClient,
 			})
 		}
 	}
@@ -41,10 +36,8 @@ func NewSNSTopics(cfgs map[string]aws.Config, concurrency int, input NewSNSInput
 }
 
 type SNSTopic struct {
-	NewSNSInput
-
+	utils.ThreadConfig
 	thread    int
-	region    string
 	topicName string
 	topicArn  string
 
@@ -52,11 +45,12 @@ type SNSTopic struct {
 }
 
 func (t *SNSTopic) Name() string {
-	return fmt.Sprintf("sns-%s-%d", t.region, t.thread)
+	return fmt.Sprintf("sns-%s-%s-%d", t.AccountId, t.Region, t.thread)
 }
 
 // Setup creates the SNS topic if it doesn't already exist.
 func (t *SNSTopic) Setup(ctx *utils.Context) error {
+	ctx.Debug.Printf("creating SNS topic %s", t.topicName)
 	_, err := t.snsClient.CreateTopic(ctx, &sns.CreateTopicInput{
 		Name: &t.topicName,
 	})

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/ryanjarv/roles/pkg/utils"
@@ -16,23 +15,22 @@ type NewSQSInput struct {
 }
 
 // NewSQSQueues constructs plugin instances (SQSQueue) for each region/thread.
-func NewSQSQueues(cfgs map[string]aws.Config, concurrency int, input NewSQSInput) []Plugin {
+func NewSQSQueues(cfgs map[string]utils.ThreadConfig, concurrency int) []Plugin {
 	var results []Plugin
 
 	for region, cfg := range cfgs {
-		sqsClient := sqs.NewFromConfig(cfg)
+		sqsClient := sqs.NewFromConfig(cfg.Config)
 
 		for i := 0; i < concurrency; i++ {
-			queueName := fmt.Sprintf("role-fh9283f-sqs-%s-%s-%d", region, input.AccountId, i)
+			queueName := fmt.Sprintf("role-fh9283f-sqs-%s-%s-%d", region, cfg.AccountId, i)
 
 			results = append(results, &SQSQueue{
-				NewSQSInput: input,
-				thread:      i,
-				region:      region,
-				queueName:   queueName,
-				sqsClient:   sqsClient,
-				queueUrl:    fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/%s", region, input.AccountId, queueName),
-				queueArn:    fmt.Sprintf("arn:aws:sqs:%s:%s:%s", region, input.AccountId, queueName),
+				ThreadConfig: cfg,
+				thread:       i,
+				queueName:    queueName,
+				sqsClient:    sqsClient,
+				queueUrl:     fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/%s", region, cfg.AccountId, queueName),
+				queueArn:     fmt.Sprintf("arn:aws:sqs:%s:%s:%s", region, cfg.AccountId, queueName),
 			})
 		}
 	}
@@ -41,10 +39,9 @@ func NewSQSQueues(cfgs map[string]aws.Config, concurrency int, input NewSQSInput
 }
 
 type SQSQueue struct {
-	NewSQSInput
+	utils.ThreadConfig
 
 	thread    int
-	region    string
 	queueName string
 	queueArn  string
 	queueUrl  string
@@ -53,12 +50,13 @@ type SQSQueue struct {
 }
 
 func (s *SQSQueue) Name() string {
-	return fmt.Sprintf("sqs-%s-%d", s.region, s.thread)
+	return fmt.Sprintf("sqs-%s-%d", s.Region, s.thread)
 }
 
 // Setup creates the queue and retrieves its URL and ARN.
 // This method is now responsible for actually provisioning the SQS resource.
 func (s *SQSQueue) Setup(ctx *utils.Context) error {
+	ctx.Debug.Printf("creating SQS queue %s", s.queueName)
 	if _, err := s.sqsClient.CreateQueue(ctx, &sqs.CreateQueueInput{
 		QueueName: &s.queueName,
 	}); err != nil {
@@ -95,14 +93,14 @@ func (s *SQSQueue) ScanArn(ctx *utils.Context, arn string) (bool, error) {
 
 // CleanUp deletes the SQS queue that was created in Setup().
 func (s *SQSQueue) CleanUp(ctx *utils.Context) error {
-	if s.queueUrl == "" {
-		return nil
-	}
-
 	_, err := s.sqsClient.DeleteQueue(ctx, &sqs.DeleteQueueInput{
 		QueueUrl: &s.queueUrl,
 	})
-	if err != nil {
+
+	var notFound *types.QueueDoesNotExist
+	if errors.As(err, &notFound) {
+		ctx.Debug.Printf("queue %s not found, skipping", s.queueName)
+	} else if err != nil {
 		return fmt.Errorf("deleting queue: %w", err)
 	}
 
