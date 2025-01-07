@@ -4,21 +4,29 @@ import (
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/account"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"sync"
 )
+
+type Svc struct {
+	Organizations *organizations.Client
+	STS           *sts.Client
+	Account       *account.Client
+}
 
 type Account struct {
 	RoleArn     string     `json:"role_arn"`
 	AccountId   string     `json:"account_id"`
 	AccountName string     `json:"account_name"`
 	Config      aws.Config `json:"-"`
+	Svc         Svc
 }
 
 func LoadAccounts(ctx *Context, cfg aws.Config) (map[string]Account, error) {
 	svc := organizations.NewFromConfig(cfg)
-	paginator := organizations.NewListAccountsPaginator(svc, &organizations.ListAccountsInput{})
 
 	info, err := GetCallerInfo(ctx, cfg)
 	if err != nil {
@@ -31,8 +39,17 @@ func LoadAccounts(ctx *Context, cfg aws.Config) (map[string]Account, error) {
 			AccountId:   *info.Account,
 			AccountName: "root",
 			Config:      cfg,
+			Svc: Svc{
+				Organizations: organizations.NewFromConfig(cfg),
+				STS:           sts.NewFromConfig(cfg),
+				Account:       account.NewFromConfig(cfg),
+			},
 		},
 	}
+
+	paginator := organizations.NewListAccountsPaginator(svc, &organizations.ListAccountsInput{})
+	wg := sync.WaitGroup{}
+	errs := make(chan error)
 
 	for paginator.HasMorePages() {
 		resp, err := paginator.NextPage(ctx)
@@ -40,28 +57,45 @@ func LoadAccounts(ctx *Context, cfg aws.Config) (map[string]Account, error) {
 			return nil, fmt.Errorf("listing accounts: %s", err)
 		}
 
-		for _, account := range resp.Accounts {
-			resp, err := svc.ListTagsForResource(ctx, &organizations.ListTagsForResourceInput{
-				ResourceId: account.Id,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("listing tags: %s", err)
-			}
-			if !HasTag(resp.Tags, "role-scanning-account", "true") {
-				continue
-			}
+		for _, accnt := range resp.Accounts {
+			wg.Add(1)
 
-			roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", *account.Id, "OrganizationAccountAccessRole")
+			go func() {
+				defer wg.Done()
 
-			accounts[*account.Id] = Account{
-				RoleArn:     roleArn,
-				AccountId:   *account.Id,
-				AccountName: *account.Name,
-				Config:      AssumeRoleConfig(cfg, roleArn),
-			}
+				resp, err := svc.ListTagsForResource(ctx, &organizations.ListTagsForResourceInput{
+					ResourceId: accnt.Id,
+				})
+				if err != nil {
+					errs <- fmt.Errorf("listing tags: %s", err)
+				}
+				if !HasTag(resp.Tags, "role-scanning-account", "true") {
+					return
+				}
 
-			ctx.Info.Printf("Found account %s", *account.Name)
+				roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", *accnt.Id, "OrganizationAccountAccessRole")
+
+				cfg := AssumeRoleConfig(cfg, roleArn)
+				accounts[*accnt.Id] = Account{
+					RoleArn:     roleArn,
+					AccountId:   *accnt.Id,
+					AccountName: *accnt.Name,
+					Config:      cfg,
+					Svc: Svc{
+						Organizations: organizations.NewFromConfig(cfg),
+						STS:           sts.NewFromConfig(cfg),
+						Account:       account.NewFromConfig(cfg),
+					},
+				}
+
+				ctx.Info.Printf("Found account %s", *accnt.Name)
+			}()
 		}
+	}
+	wg.Wait()
+
+	if err := CheckErrorCh(errs); err != nil {
+		return nil, err
 	}
 
 	return accounts, nil

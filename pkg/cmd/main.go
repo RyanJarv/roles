@@ -18,9 +18,9 @@ type Opts struct {
 	RolesPath    string
 	AccountsPath string
 	AccountsStr  string
-	Concurrency  int
 	Force        bool
 	Clean        bool
+	RateLimit    int
 }
 
 // LoadAllPlugins loads all enabled plugins.
@@ -28,9 +28,9 @@ type Opts struct {
 // Add new plugins here.
 func LoadAllPlugins(cfgs map[string]utils.ThreadConfig) [][]plugins.Plugin {
 	return [][]plugins.Plugin{
-		//plugins.NewECRPublicRepositories(cfgs, 1),
-		//plugins.NewAccessPoints(cfgs, 1),
-		//plugins.NewS3Buckets(cfgs, 1),
+		plugins.NewECRPublicRepositories(cfgs, 1),
+		plugins.NewAccessPoints(cfgs, 1),
+		plugins.NewS3Buckets(cfgs, 1),
 		plugins.NewSNSTopics(cfgs, 1),
 		plugins.NewSQSQueues(cfgs, 1),
 	}

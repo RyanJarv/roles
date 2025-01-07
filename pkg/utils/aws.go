@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/account/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,33 +20,51 @@ type ThreadConfig struct {
 
 func LoadConfigs(ctx *Context, accounts map[string]Account) (map[string]ThreadConfig, error) {
 	cfgs := map[string]ThreadConfig{}
+	m := &sync.Mutex{}
+
+	wg := &sync.WaitGroup{}
+	errs := make(chan error)
 
 	for _, v := range accounts {
-		regions, err := GetAllEnabledRegions(ctx, v.Config)
-		if err != nil {
-			return nil, fmt.Errorf("getting enabled regions: %s", err)
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		for _, region := range regions {
-			newCfg := v.Config.Copy()
-			newCfg.Region = *region.RegionName
-			cfgs[fmt.Sprintf("%s-%s", v.AccountId, *region.RegionName)] = ThreadConfig{
-				AccountId: v.AccountId,
-				Config:    newCfg,
-				Region:    *region.RegionName,
+			regions, err := GetAllEnabledRegions(ctx, v.Svc.Account)
+			if err != nil {
+				errs <- fmt.Errorf("getting enabled regions: %s", err)
+				return
 			}
-		}
 
-		ctx.Info.Printf("loaded %d regions in account %s", len(regions), v.AccountId)
+			for _, region := range regions {
+				newCfg := v.Config.Copy()
+				newCfg.Region = *region.RegionName
+
+				m.Lock()
+				cfgs[fmt.Sprintf("%s-%s", v.AccountId, *region.RegionName)] = ThreadConfig{
+					AccountId: v.AccountId,
+					Config:    newCfg,
+					Region:    *region.RegionName,
+				}
+				m.Unlock()
+			}
+
+			ctx.Info.Printf("loaded %d regions in account %s", len(regions), v.AccountId)
+		}()
+	}
+	wg.Wait()
+
+	if err := CheckErrorCh(errs); err != nil {
+		return nil, err
 	}
 
 	return cfgs, nil
 }
 
-func GetAllEnabledRegions(ctx *Context, cfg aws.Config) ([]types.Region, error) {
+func GetAllEnabledRegions(ctx *Context, svc *account.Client) ([]types.Region, error) {
 	var regions []types.Region
-	svc := account.NewFromConfig(cfg)
 	paginator := account.NewListRegionsPaginator(svc, &account.ListRegionsInput{
+		MaxResults: aws.Int32(50),
 		RegionOptStatusContains: []types.RegionOptStatus{
 			types.RegionOptStatusEnabled,
 			types.RegionOptStatusEnabledByDefault,
@@ -70,8 +89,7 @@ func GetCallerInfo(ctx *Context, cfg aws.Config) (*sts.GetCallerIdentityOutput, 
 	return resp, nil
 }
 
-func EnableAllRegions(ctx *Context, cfg aws.Config) error {
-	svc := account.NewFromConfig(cfg)
+func EnableAllRegions(ctx *Context, svc *account.Client) error {
 	paginator := account.NewListRegionsPaginator(svc, &account.ListRegionsInput{
 		RegionOptStatusContains: []types.RegionOptStatus{
 			types.RegionOptStatusDisabled,

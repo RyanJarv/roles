@@ -250,3 +250,12 @@ func FlattenList[T any](v [][]T) []T {
 	}
 	return result
 }
+
+func CheckErrorCh(errs chan error) error {
+	select {
+	case err := <-errs:
+		return err
+	default:
+	}
+	return nil
+}

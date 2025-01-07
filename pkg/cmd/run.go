@@ -41,7 +41,7 @@ func Run(ctx *utils.Context, opts Opts) error {
 		Storage:   storage,
 		Force:     opts.Force,
 		Plugins:   LoadAllPlugins(cfgs),
-		RateLimit: 1000,
+		RateLimit: opts.RateLimit,
 	})
 
 	scanData, err := arn.GetArns(ctx, &arn.GetArnsInput{

@@ -49,7 +49,7 @@ func SetupAccounts(ctx *utils.Context, accounts map[string]utils.Account, cfg aw
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := utils.EnableAllRegions(ctx, v.Config); err != nil {
+			if err := utils.EnableAllRegions(ctx, v.Svc.Account); err != nil {
 				ctx.Error.Printf("enabling all regions: %s", err)
 			}
 		}()
