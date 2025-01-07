@@ -38,9 +38,10 @@ func Run(ctx *utils.Context, opts Opts) error {
 	defer storage.Close()
 
 	scan := scanner.NewScanner(&scanner.NewScannerInput{
-		Storage: storage,
-		Force:   opts.Force,
-		Plugins: LoadAllPlugins(cfgs),
+		Storage:   storage,
+		Force:     opts.Force,
+		Plugins:   LoadAllPlugins(cfgs),
+		RateLimit: 1000,
 	})
 
 	scanData, err := arn.GetArns(ctx, &arn.GetArnsInput{

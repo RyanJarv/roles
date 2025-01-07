@@ -12,25 +12,28 @@ import (
 )
 
 type NewScannerInput struct {
-	Storage *Storage
-	Plugins [][]plugins.Plugin
-	Force   bool
+	Storage   *Storage
+	Plugins   [][]plugins.Plugin
+	Force     bool
+	RateLimit int
 }
 
 func NewScanner(input *NewScannerInput) *Scanner {
 	return &Scanner{
-		storage: input.Storage,
-		force:   input.Force,
-		Plugins: utils.FlattenList(input.Plugins),
+		rateLimit: input.RateLimit,
+		storage:   input.Storage,
+		force:     input.Force,
+		Plugins:   utils.FlattenList(input.Plugins),
 	}
 }
 
 type Scanner struct {
-	storage *Storage
-	force   bool
-	input   chan string
-	results chan Result
-	Plugins []plugins.Plugin
+	storage   *Storage
+	force     bool
+	input     chan string
+	results   chan Result
+	Plugins   []plugins.Plugin
+	rateLimit int
 }
 
 // ScanArns scans the given ARN for access points
@@ -40,6 +43,9 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 
 		var rootArnsToScan []string
 		var allAccountArns []string
+
+		rateLimitBucket, cancel := rateLimiter(ctx, s.rateLimit)
+		defer cancel()
 
 		if s.force {
 			rootArnsToScan = lo.Keys(rootArnMap)
@@ -67,7 +73,7 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 		if len(rootArnsToScan) > 0 {
 			ctx.Info.Printf("Scanning %d root ARNs", len(rootArnsToScan))
 
-			for root := range scanWithPlugins(ctx, s.Plugins, rootArnsToScan) {
+			for root := range scanWithPlugins(ctx, s.Plugins, rootArnsToScan, rateLimitBucket) {
 				if root.Exists {
 					allAccountArns = append(allAccountArns, rootArnMap[root.Arn]...)
 				}
@@ -99,7 +105,7 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 		if len(accountArnsToScan) > 0 {
 			ctx.Info.Printf("Scanning %d account ARNs", len(accountArnsToScan))
 
-			for result := range scanWithPlugins(ctx, s.Plugins, accountArnsToScan) {
+			for result := range scanWithPlugins(ctx, s.Plugins, accountArnsToScan, rateLimitBucket) {
 				s.storage.Set(result.Arn, result.Exists)
 
 				if !yield(result.Arn, result.Exists) {
@@ -110,11 +116,36 @@ func (s *Scanner) ScanArns(ctx *utils.Context, principalArns []string) iter.Seq2
 	}
 }
 
+func rateLimiter(ctx *utils.Context, rateLimit int) (chan int, context.CancelFunc) {
+	rateLimitContext, cancelFunc := ctx.WithCancel()
+
+	rateLimitBucket := make(chan int, rateLimit)
+	go func() {
+		for rateLimitContext.IsRunning() {
+			refillRateLimitBucket(rateLimitBucket, rateLimit)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	return rateLimitBucket, cancelFunc
+}
+
+func refillRateLimitBucket(rateLimitBucket chan int, tokens int) {
+	go func() {
+		for i := 0; i < tokens; i++ {
+			select {
+			case rateLimitBucket <- i:
+			default:
+				continue
+			}
+		}
+	}()
+}
+
 func (s *Scanner) CleanUp(ctx *utils.Context) error {
 	return nil
 }
 
-func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns []string) chan Result {
+func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns []string, rateLimitBucket chan int) chan Result {
 	queueSize := 10 * len(plugins)
 
 	ctx.Debug.Printf("queue size: %d", queueSize)
@@ -131,6 +162,7 @@ func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns
 
 		go func() {
 			for principalArn := range input {
+				<-rateLimitBucket
 				if exists, err := plugin.ScanArn(ctx, principalArn); err != nil {
 					ctx.Error.Printf("%s: scanning: %s", plugin.Name(), err)
 				} else {
