@@ -28,9 +28,9 @@ type Opts struct {
 // Add new plugins here.
 func LoadAllPlugins(cfgs map[string]utils.ThreadConfig) [][]plugins.Plugin {
 	return [][]plugins.Plugin{
-		//plugins.NewECRPublicRepositories(cfgs, 10),
-		//plugins.NewAccessPoints(cfgs, 4),
-		//plugins.NewS3Buckets(cfgs, 4),
+		//plugins.NewECRPublicRepositories(cfgs, 1),
+		//plugins.NewAccessPoints(cfgs, 1),
+		//plugins.NewS3Buckets(cfgs, 1),
 		plugins.NewSNSTopics(cfgs, 1),
 		plugins.NewSQSQueues(cfgs, 1),
 	}

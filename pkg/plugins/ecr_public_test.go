@@ -100,8 +100,7 @@ func TestECRPublicSetup(t *testing.T) {
 		repositoryArn:  "arn:aws:ecr-public::123456789012:repository/role-fh9283f-ecr-public-us-east-1-123456789012-0",
 		client:         mockClient,
 	}
-
-	ctx := &utils.Context{} // Mock or real context
+	ctx := utils.NewContext(context.Background())
 
 	// 1) Test successful repository creation
 	err := r.Setup(ctx)
@@ -127,8 +126,8 @@ func TestECRPublicScanArn(t *testing.T) {
 		client:         mockClient,
 	}
 
-	ctx := &utils.Context{}
 	principalARN := "arn:aws:iam::123456789012:role/SomeTestRole"
+	ctx := utils.NewContext(context.Background())
 
 	// 1) Success scenario
 	exists, err := r.ScanArn(ctx, principalARN)
@@ -165,8 +164,7 @@ func TestECRPublicCleanUp(t *testing.T) {
 		client:         mockClient,
 	}
 
-	ctx := &utils.Context{}
-
+	ctx := utils.NewContext(context.Background())
 	// 1) Successful delete
 	err := r.CleanUp(ctx)
 	require.NoError(t, err)
@@ -191,13 +189,15 @@ func TestNewECRPublicRepositories_UnsupportedRegion(t *testing.T) {
 	defer func() { KnownECRPublicRegions = oldKnownRegions }()
 
 	cfgs := map[string]utils.ThreadConfig{
-		"us-east-1":  {},
-		"ap-south-2": {},
+		"us-east-1": {
+			Region: "us-east-1",
+		},
+		"ap-south-2": {
+			Region: "ap-south-2",
+		},
 	}
-	concurrency := 1
-
 	// Capture stdout or logs if you want to test the warning message, or just rely on plugin count.
-	plugs := NewECRPublicRepositories(cfgs, concurrency)
+	plugs := NewECRPublicRepositories(cfgs, 1)
 	require.Len(t, plugs, 1, "should only create plugin for us-east-1")
 	assert.Equal(t, "ecr-public-us-east-1-0", plugs[0].Name())
 }
