@@ -67,7 +67,7 @@ However, a few things worth noting here:
 
 * This was an unoptimized test.
 * Depending on how rate limiting works, these rates may not be representative of a longer run.
-* Just a guess here, but AWS probably will shut down or restrict your account if you do this too long.
+* Just a guess here, but AWS probably will shut down or restrict your account if you do this for an extended period.
 
 ## Build
 
