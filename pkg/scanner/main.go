@@ -208,12 +208,12 @@ func LogStats(ctx *utils.Context, processed *int) context.CancelFunc {
 
 	go func() {
 		for {
-			elapsed := time.Now().Sub(start)
-			perSecond := float64(*processed) / elapsed.Seconds()
 			select {
 			case <-ctx.Done():
 				break
 			case <-time.After(5 * time.Second):
+				elapsed := time.Now().Sub(start)
+				perSecond := float64(*processed) / elapsed.Seconds()
 				ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", *processed, elapsed.Seconds(), perSecond)
 			}
 		}
