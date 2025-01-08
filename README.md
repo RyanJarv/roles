@@ -54,10 +54,10 @@ With the [Organization Setup](#organization-setup) enabled, running on a c6g.2xl
 the SNS and SQS [plugins enabled](./pkg/plugins/main.go): 
 
 * 1 concurrency per region, per account, per plugin
-    * [INFO] processed 74955 in 5.0 seconds: 7360.2/second
-    * [INFO] processed 169675 in 20.0 seconds: 7456.5/second
+    * `[INFO] processed 74955 in 5.0 seconds: 7360.2/second`
+    * `[INFO] processed 169675 in 20.0 seconds: 7456.5/second`
 * 2 concurrency per region, per account, per plugin
-    * [INFO] processed 202789 in 10.0 seconds: 13408.0/second
+    * `[INFO] processed 202789 in 10.0 seconds: 13408.0/second`
 
 So about 13,400, although if you do the math that's actually 20,279/second. There was a bug in the stats counter, so the
 20k a second looks like the right number (bug fixed [here](https://github.com/RyanJarv/roles/commit/224a2b117ec71f460ab72c60c5533f90b27a8fec) if you want to 
