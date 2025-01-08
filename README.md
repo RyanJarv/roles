@@ -2,7 +2,7 @@
 
 Unauthenticated enumeration of AWS IAM Roles.
 
-By default, this tool is rate limited to 100 roles/second, this can be increased up to 1000 by passing the `-rate` flag.
+By default, this tool is rate limited to 10 roles/second, this can be increased up to 50 by passing the `-rate` flag.
 
 ## Usage
 
@@ -35,9 +35,9 @@ path/DynamicRoleName-{{.Region}}-{{.AccountId}} # Software B # Found at ...
 ## Organization Setup
 
 This is documented here for completeness, but I have to recommend against using this. It's really just too fast, you 
-do not need it to reach the rate limit of 1000 roles/second, and honestly I wouldn't be surprised if AWS shuts down, or
-restricts your org if you run this too long. The rate limit of 1000 is set because it's approximately the documented 
-speed of the other more-commonly known tool for this purpose ([quiet-riot](https://github.com/righteousgambit/quiet-riot)).
+do not need it to reach the rate limit of 50 roles/second, and honestly I wouldn't be surprised if AWS shuts down, or
+restricts your org if you run this too long. The rate limit of 50 is set because it's approximately the documented 
+per-account speed of the other more-commonly known tool for this purpose ([quiet-riot](https://github.com/righteousgambit/quiet-riot)).
 
 If you pass the `-org` with `-setup` this tool assumes it is running in an organization dedicated to running this tool
 and nothing else. This will, create an AWS organization in the current account if it doesn't already exist, create a 

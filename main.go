@@ -26,7 +26,7 @@ func main() {
 	flag.StringVar(&opts.AccountsStr, "accounts", "", "Path to a file containing account IDs")
 	flag.BoolVar(&opts.Force, "force", false, "Force rescan")
 	flag.BoolVar(&opts.Setup, "setup", false, "Run optional one-time account optimization setup")
-	flag.IntVar(&opts.RateLimit, "rate-limit", 100, "Roles scanned per second (default: 5, max: 1000)")
+	flag.IntVar(&opts.RateLimit, "rate-limit", 5, "Roles scanned per second (default: 5, max: 50)")
 
 	flag.Parse()
 
@@ -40,8 +40,8 @@ func main() {
 		ctx.Error.Fatalf("cannot use both -setup and -clean")
 	} else if opts.Org && !opts.Setup {
 		ctx.Error.Fatalf("cannot use -org without -setup")
-	} else if opts.RateLimit <= 0 || opts.RateLimit > 1000 {
-		ctx.Error.Fatalf("rate-limit must be between 1 and 1000")
+	} else if opts.RateLimit <= 0 || opts.RateLimit > 50 {
+		ctx.Error.Fatalf("rate-limit must be between 1 and 50")
 	} else if opts.Setup {
 		// Run optional one-time account optimizer
 		if err := cmd.Setup(ctx, opts.Profile, opts.Org); err != nil {
