@@ -60,7 +60,7 @@ the SNS and SQS [plugins enabled](./pkg/plugins/main.go):
     * [INFO] processed 202789 in 10.0 seconds: 13408.0/second
 
 So about 13,400, although if you do the math that's actually 20,279/second. There was a bug in the stats counter, so the
-20k a second looks like the right number (bug fixed in commit 9d94cd144c290c4f22c231ae63d8645663c359d9 if you want to 
+20k a second looks like the right number (bug fixed [here](https://github.com/RyanJarv/roles/commit/224a2b117ec71f460ab72c60c5533f90b27a8fec) if you want to 
 double-check it).
 
 However, a few things worth noting here: 
