@@ -34,6 +34,8 @@ path/DynamicRoleName-{{.Region}}-{{.AccountId}} # Software B # Found at ...
 
 ## Organization Setup
 
+**Org setup is not supported currently**
+
 This is documented here for completeness, but I have to recommend against using this. It's really just too fast, you 
 do not need it to reach the rate limit of 50 roles/second, and honestly I wouldn't be surprised if AWS shuts down, or
 restricts your org if you run this too long. The rate limit of 50 is set because it's approximately the documented 
@@ -43,8 +45,6 @@ If you pass the `-org` with `-setup` this tool assumes it is running in an organ
 and nothing else. This will, create an AWS organization in the current account if it doesn't already exist, create a 
 number of sub-accounts in the organization with the tag `"role-scanning-account": "true"`, and enable all regions in all
 sub-accounts.
-
-This feature is disabled currently. See below for benchmarks though.
 
 ### Organization Setup Benchmarks
 
