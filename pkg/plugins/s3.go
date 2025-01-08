@@ -103,9 +103,11 @@ func (s *S3Bucket) ScanArn(ctx *utils.Context, arn string) (bool, error) {
 // CleanUp deletes the bucket (and optionally the bucket policy first).
 func (s *S3Bucket) CleanUp(ctx *utils.Context) error {
 	// Remove the bucket policy
-	s.s3Client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+	if _, err := s.s3Client.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
 		Bucket: &s.bucketName,
-	})
+	}); err != nil {
+		return fmt.Errorf("deleting bucket policy: %w", err)
+	}
 
 	// Delete the bucket
 	if _, err := s.s3Client.DeleteBucket(ctx, &s3.DeleteBucketInput{

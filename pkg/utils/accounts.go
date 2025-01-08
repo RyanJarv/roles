@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -34,10 +35,10 @@ func LoadAccounts(ctx *Context, cfg aws.Config) (map[string]Account, error) {
 	}
 
 	accounts := map[string]Account{
-		// Always add the current account, it won't have tags set and may not even be an organization account
-		"root": {
+		// Always add the current account, it won't have tags set and may not be an organization account.
+		"default": {
 			AccountId:   *info.Account,
-			AccountName: "root",
+			AccountName: "default",
 			Config:      cfg,
 			Svc: Svc{
 				Organizations: organizations.NewFromConfig(cfg),
@@ -52,8 +53,12 @@ func LoadAccounts(ctx *Context, cfg aws.Config) (map[string]Account, error) {
 	errs := make(chan error)
 
 	for paginator.HasMorePages() {
+		var accessDenied *types.AccessDeniedException
 		resp, err := paginator.NextPage(ctx)
-		if err != nil {
+		if errors.As(err, &accessDenied) {
+			ctx.Debug.Printf("Access denied listing accounts, will use non-org mode.")
+			return accounts, nil
+		} else if err != nil {
 			return nil, fmt.Errorf("listing accounts: %s", err)
 		}
 

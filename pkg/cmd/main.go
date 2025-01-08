@@ -31,7 +31,7 @@ func LoadAllPlugins(cfgs map[string]utils.ThreadConfig) [][]plugins.Plugin {
 		plugins.NewECRPublicRepositories(cfgs, 1),
 		plugins.NewAccessPoints(cfgs, 1),
 		plugins.NewS3Buckets(cfgs, 1),
-		plugins.NewSNSTopics(cfgs, 1),
-		plugins.NewSQSQueues(cfgs, 1),
+		plugins.NewSNSTopics(cfgs, 2),
+		plugins.NewSQSQueues(cfgs, 2),
 	}
 }

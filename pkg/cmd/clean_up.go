@@ -31,7 +31,7 @@ func CleanUp(ctx *utils.Context, opts Opts) error {
 }
 
 func cleanUp(ctx *utils.Context, cfgs map[string]utils.ThreadConfig) (err error) {
-	concurrency := make(chan int, 40)
+	concurrency := make(chan int, 20)
 	wg := sync.WaitGroup{}
 
 	for _, p := range utils.FlattenList(LoadAllPlugins(cfgs)) {

@@ -80,8 +80,8 @@ func SetupPlugins(ctx *utils.Context, cfgs map[string]utils.ThreadConfig) (err e
 
 	wg := sync.WaitGroup{}
 
-	// Setup 40 regions/accounts concurrently
-	concurrent := make(chan int, 40)
+	// Setup 20 regions/accounts concurrently, 40 seems to error occasionally.
+	concurrent := make(chan int, 20)
 
 	for _, plugin := range utils.FlattenList(LoadAllPlugins(cfgs)) {
 		wg.Add(1)

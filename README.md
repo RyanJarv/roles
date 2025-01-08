@@ -2,7 +2,11 @@
 
 Unauthenticated enumeration of AWS IAM Roles.
 
+<<<<<<< HEAD
 This tool is rate limited to 1000 roles/second. 
+=======
+By default, this tool is rate limited to 100 roles/second, this can be increased up to 1000 by passing the `-rate` flag.
+>>>>>>> 55c18ed (Make sure single-account setup is working again)
 
 ## Usage
 
@@ -31,6 +35,37 @@ StaticRoleName # Default X role # Found at ...
 DynamicRoleName-{{.Region}}-{{.AccountId}} # Software A # Found at ...
 path/DynamicRoleName-{{.Region}}-{{.AccountId}} # Software B # Found at ...
 ```
+
+## Organization Setup
+
+This is documented here for completeness, but I have to recommend against using this. It's really just too fast, you 
+do not need it to reach the rate limit of 1000 roles/second, and honestly I wouldn't be surprised if AWS shuts down, or
+restricts your org if you run this too long. The rate limit of 1000 is set because it's approximately the documented 
+speed of the other more-commonly known tool for this purpose ([quiet-riot](https://github.com/righteousgambit/quiet-riot).
+
+If you pass the `-org` with `-setup` this tool assumes it is running in an organization dedicated to running this tool
+and nothing else. This will, create an AWS organization in the current account if it doesn't already exist, create a 
+number of sub-accounts in the organization with the tag `"role-scanning-account": "true"`, and enable all regions in all
+sub-accounts.
+
+This feature is disabled currently. I'll include the benchmarks below for reference though:
+
+### Benchmarks
+
+With the [Organization Setup](#organization-setup) enabled, running on a c6g.2xlarge arm64 instance in us-east-1, with
+the SNS and SQS [plugins enabled](./pkg/plugins/main.go): 
+
+* 1 concurrency per region, per account, per plugin
+    * [INFO] processed 74955 in 5.0 seconds: 7360.2/second
+    * [INFO] processed 169675 in 20.0 seconds: 7456.5/second
+* 2 concurrency per region, per account, per plugin
+    * [INFO] processed 202789 in 10.0 seconds: 13408.0/second
+
+I didn't test any higher than this, but to achieve approximately 1000/reqsin a single account normally all plugins with 
+concurrency set to:
+
+* SQS: 10
+plugins enabled and set to 2 concurrency per region, per account it achieved
 
 ## Build
 

@@ -26,8 +26,7 @@ func main() {
 	flag.StringVar(&opts.AccountsStr, "accounts", "", "Path to a file containing account IDs")
 	flag.BoolVar(&opts.Force, "force", false, "Force rescan")
 	flag.BoolVar(&opts.Setup, "setup", false, "Run optional one-time account optimization setup")
-	flag.IntVar(&opts.RateLimit, "rate-limit", 5, "Roles scanned per second (default: 5, max: 1000)")
-	flag.BoolVar(&opts.Org, "org", false, "Run organization setup, requires -setup")
+	flag.IntVar(&opts.RateLimit, "rate-limit", 2000, "Roles scanned per second (default: 5, max: 1000)")
 
 	flag.Parse()
 

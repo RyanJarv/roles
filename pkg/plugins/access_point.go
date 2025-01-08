@@ -18,9 +18,9 @@ import (
 func NewAccessPoints(cfgs map[string]utils.ThreadConfig, concurrency int) []Plugin {
 	results := []Plugin{}
 
-	for name, cfg := range cfgs {
+	for _, cfg := range cfgs {
 		for i := 0; i < concurrency; i++ {
-			accessPointName := fmt.Sprintf("role-%s-%d", name, i)
+			accessPointName := fmt.Sprintf("role-%s-%d", cfg.Region, i)
 			results = append(results, &AccessPoint{
 				ThreadConfig: cfg,
 				// Make sure each thread has its own unique bucket and access point name.
@@ -29,7 +29,7 @@ func NewAccessPoints(cfgs map[string]utils.ThreadConfig, concurrency int) []Plug
 				thread:          i,
 				s3:              s3.NewFromConfig(cfg.Config),
 				s3control:       s3control.NewFromConfig(cfg.Config),
-				accesspointArn:  fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", name, cfg.AccountId, accessPointName),
+				accesspointArn:  fmt.Sprintf("arn:aws:s3:%s:%s:accesspoint/%s", cfg.Region, cfg.AccountId, accessPointName),
 			})
 		}
 	}
@@ -145,18 +145,28 @@ func (s *AccessPoint) CleanUp(ctx *utils.Context) error {
 		AccountId: &s.AccountId,
 		Bucket:    &s.bucketName,
 	})
-	if err != nil {
+	var invalidRequest *smithy.GenericAPIError
+	if errors.As(err, &invalidRequest) && strings.Contains(strings.ToLower(invalidRequest.ErrorMessage()), "no access point attached to this bucket") {
+		ctx.Debug.Printf("no access points found for bucket %s", s.bucketName)
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("listing access points: %w", err)
+	} else {
+		for _, point := range points.AccessPointList {
+			ctx.Debug.Printf("deleting up accesspoint %s", *point.Name)
+			if _, err := s.s3control.DeleteAccessPoint(ctx, &s3control.DeleteAccessPointInput{
+				Name:      point.Name,
+				AccountId: &s.AccountId,
+			}); err != nil {
+				return fmt.Errorf("deleting accesspoint: %s", err)
+			}
+		}
 	}
 
-	for _, point := range points.AccessPointList {
-		ctx.Debug.Printf("deleting up accesspoint %s", *point.Name)
-		if _, err := s.s3control.DeleteAccessPoint(ctx, &s3control.DeleteAccessPointInput{
-			Name:      point.Name,
-			AccountId: &s.AccountId,
-		}); err != nil {
-			return fmt.Errorf("deleting accesspoint: %s", err)
-		}
+	if _, err := s.s3.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{
+		Bucket: &s.bucketName,
+	}); err != nil {
+		return fmt.Errorf("deleting bucket policy: %w", err)
 	}
 
 	if _, err := s.s3.DeleteBucket(ctx, &s3.DeleteBucketInput{
