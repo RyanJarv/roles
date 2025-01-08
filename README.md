@@ -48,8 +48,6 @@ sub-accounts.
 
 ### Organization Setup Benchmarks
 
-Note: Org setup is not supported currently, I'm just including this section for reference.
-
 With the [Organization Setup](#organization-setup) enabled, running on a c6g.2xlarge arm64 instance in us-east-1, with
 the SNS and SQS [plugins enabled](./pkg/plugins/main.go): 
 
