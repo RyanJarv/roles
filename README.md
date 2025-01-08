@@ -48,9 +48,11 @@ and nothing else. This will, create an AWS organization in the current account i
 number of sub-accounts in the organization with the tag `"role-scanning-account": "true"`, and enable all regions in all
 sub-accounts.
 
-This feature is disabled currently. I'll include the benchmarks below for reference though:
+This feature is disabled currently. See below for benchmarks though.
 
-### Benchmarks
+### Organization Setup Benchmarks
+
+Note: Org setup is not supported currently, I'm just including this section for reference.
 
 With the [Organization Setup](#organization-setup) enabled, running on a c6g.2xlarge arm64 instance in us-east-1, with
 the SNS and SQS [plugins enabled](./pkg/plugins/main.go): 
@@ -61,11 +63,14 @@ the SNS and SQS [plugins enabled](./pkg/plugins/main.go):
 * 2 concurrency per region, per account, per plugin
     * [INFO] processed 202789 in 10.0 seconds: 13408.0/second
 
-I didn't test any higher than this, but to achieve approximately 1000/reqsin a single account normally all plugins with 
-concurrency set to:
+So about 13,400, although if you do the math that's actually 20,279/second. There was a bug in the stats counter, so the
+20k a second looks like the right number (bug fixed in commit 9d94cd144c290c4f22c231ae63d8645663c359d9 if you want to 
+double-check it).
 
-* SQS: 10
-plugins enabled and set to 2 concurrency per region, per account it achieved
+However, a few things worth noting here: 
+
+* This was an unoptimized test.
+* Depending on how rate limiting works, these rates may not be representative of a longer run.
 
 ## Build
 
