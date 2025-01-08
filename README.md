@@ -2,11 +2,7 @@
 
 Unauthenticated enumeration of AWS IAM Roles.
 
-<<<<<<< HEAD
-This tool is rate limited to 1000 roles/second. 
-=======
 By default, this tool is rate limited to 100 roles/second, this can be increased up to 1000 by passing the `-rate` flag.
->>>>>>> 55c18ed (Make sure single-account setup is working again)
 
 ## Usage
 
