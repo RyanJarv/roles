@@ -50,6 +50,7 @@ func LoadAccounts(ctx *Context, cfg aws.Config) (map[string]Account, error) {
 
 	paginator := organizations.NewListAccountsPaginator(svc, &organizations.ListAccountsInput{})
 	wg := sync.WaitGroup{}
+	mut := &sync.Mutex{}
 	errs := make(chan error)
 
 	for paginator.HasMorePages() {
@@ -81,6 +82,7 @@ func LoadAccounts(ctx *Context, cfg aws.Config) (map[string]Account, error) {
 				roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", *accnt.Id, "OrganizationAccountAccessRole")
 
 				cfg := AssumeRoleConfig(cfg, roleArn)
+				mut.Lock()
 				accounts[*accnt.Id] = Account{
 					RoleArn:     roleArn,
 					AccountId:   *accnt.Id,
@@ -92,6 +94,7 @@ func LoadAccounts(ctx *Context, cfg aws.Config) (map[string]Account, error) {
 						Account:       account.NewFromConfig(cfg),
 					},
 				}
+				mut.Unlock()
 
 				ctx.Info.Printf("Found account %s", *accnt.Name)
 			}()
