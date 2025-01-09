@@ -61,7 +61,7 @@ the SNS and SQS [plugins enabled](./pkg/plugins/main.go):
 20k a second looks like the right number (bug fixed [here](https://github.com/RyanJarv/roles/commit/224a2b117ec71f460ab72c60c5533f90b27a8fec) if you want to 
 double-check it).</s>
 
-Edit: The original ~13.5k metric is the most accurate here.
+Edit: The original ~13.5k metric is the most accurate here. There was/still is a bug but it didn't effect this number.
 
 However, a few things worth noting here: 
 
