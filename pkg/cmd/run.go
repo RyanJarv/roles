@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/ryanjarv/roles/pkg/arn"
 	"github.com/ryanjarv/roles/pkg/scanner"
@@ -55,7 +57,32 @@ func Run(ctx *utils.Context, opts Opts) error {
 	}
 
 	for principalArn, exists := range scan.ScanArns(ctx, lo.Keys(scanData)) {
-		if exists {
+		if opts.Json {
+			rec := struct {
+				Arn       string `json:"arn"`
+				AccountID string `json:"account_id"`
+				RoleName  string `json:"role_name"`
+				Exists    bool   `json:"exists"`
+				Comment   string `json:"comment"`
+			}{
+				Arn:    principalArn,
+				Exists: exists,
+			}
+			if parsed, err := awsarn.Parse(principalArn); err == nil {
+				rec.AccountID = parsed.AccountID
+				resource := parsed.Resource
+				if idx := strings.Index(resource, "/"); idx >= 0 {
+					rec.RoleName = resource[idx+1:]
+				} else {
+					rec.RoleName = resource
+				}
+			}
+			if info, ok := scanData[principalArn]; ok {
+				rec.Comment = info.Comment
+			}
+			line, _ := json.Marshal(rec)
+			fmt.Println(string(line))
+		} else if exists {
 			fmt.Println(principalArn, "#", scanData[principalArn].Comment)
 		}
 	}

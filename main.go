@@ -27,6 +27,7 @@ func main() {
 	flag.BoolVar(&opts.Force, "force", false, "Force rescan")
 	flag.BoolVar(&opts.Setup, "setup", false, "Run optional one-time account optimization setup")
 	flag.IntVar(&opts.RateLimit, "rate-limit", 5, "Roles scanned per second (default: 5, max: 50)")
+	flag.BoolVar(&opts.Json, "json", false, "Output results as JSON lines")
 
 	flag.Parse()
 
