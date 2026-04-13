@@ -163,18 +163,19 @@ func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns
 		go func() {
 			for principalArn := range input {
 				<-rateLimitBucket
-				if exists, err := plugin.ScanArn(ctx, principalArn); err != nil {
+				exists, err := plugin.ScanArn(ctx, principalArn)
+				if err != nil {
 					ctx.Error.Printf("%s: scanning: %s", plugin.Name(), err)
-				} else {
-					if exists {
-						ctx.Debug.Printf("found: %s", principalArn)
-					} else {
-						ctx.Debug.Printf("not found: %s", principalArn)
-					}
-					processed++
-
-					results <- Result{Arn: principalArn, Exists: exists}
 				}
+
+				if exists {
+					ctx.Debug.Printf("found: %s", principalArn)
+				} else {
+					ctx.Debug.Printf("not found: %s", principalArn)
+				}
+				processed++
+
+				results <- Result{Arn: principalArn, Exists: exists}
 			}
 			ctx.Debug.Printf("%s: finished processing input", plugin.Name())
 
