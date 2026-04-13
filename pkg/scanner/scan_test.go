@@ -37,23 +37,25 @@ func unlimitedBucket() chan int {
 	return ch
 }
 
-// TestScanWithPlugins_ErrorDropsArn verifies that when a plugin returns an
-// error for an ARN, that ARN still appears in the results (the bug was that
-// errored ARNs were silently dropped).
-func TestScanWithPlugins_ErrorDropsArn(t *testing.T) {
+// TestScanWithPlugins_RetriesErroredArn verifies that transient plugin errors
+// cause the ARN to be retried rather than emitted as a false negative.
+func TestScanWithPlugins_RetriesErroredArn(t *testing.T) {
 	ctx := utils.NewContext(context.Background())
 
 	arns := []string{
 		"arn:aws:iam::111111111111:role/GoodRole",
-		"arn:aws:iam::111111111111:role/ErrorRole",
+		"arn:aws:iam::111111111111:role/RetryRole",
 		"arn:aws:iam::111111111111:role/AnotherGoodRole",
 	}
 
-	// Single plugin that errors on one specific ARN.
+	attempts := map[string]int{}
+
+	// Single plugin that errors once for one ARN, then succeeds on retry.
 	plugin := &mockPlugin{
 		name: "test-plugin",
 		scanFunc: func(arn string) (bool, error) {
-			if arn == "arn:aws:iam::111111111111:role/ErrorRole" {
+			attempts[arn]++
+			if arn == "arn:aws:iam::111111111111:role/RetryRole" && attempts[arn] == 1 {
 				return false, fmt.Errorf("simulated transient AWS error")
 			}
 			return true, nil
@@ -67,19 +69,46 @@ func TestScanWithPlugins_ErrorDropsArn(t *testing.T) {
 		got[r.Arn] = r.Exists
 	}
 
-	// Every input ARN must appear in results, even the one that errored.
+	assert.Equal(t, 2, attempts["arn:aws:iam::111111111111:role/RetryRole"],
+		"expected transient error to trigger a retry")
+
+	// Every input ARN must appear in results once a retry succeeds.
 	for _, arn := range arns {
 		_, ok := got[arn]
-		assert.True(t, ok, "ARN %q was silently dropped from results", arn)
+		assert.True(t, ok, "ARN %q missing from results", arn)
 	}
 
-	// The errored ARN should not be reported as existing.
-	assert.False(t, got["arn:aws:iam::111111111111:role/ErrorRole"],
-		"errored ARN should not be reported as existing")
-
-	// The good ARNs should be reported as existing.
+	// All ARNs should be reported as existing after the retry succeeds.
 	assert.True(t, got["arn:aws:iam::111111111111:role/GoodRole"])
+	assert.True(t, got["arn:aws:iam::111111111111:role/RetryRole"])
 	assert.True(t, got["arn:aws:iam::111111111111:role/AnotherGoodRole"])
+}
+
+// TestScanWithPlugins_PersistentErrorsAreNotEmitted verifies that when every
+// attempt errors, the ARN is left unresolved instead of being emitted as false.
+func TestScanWithPlugins_PersistentErrorsAreNotEmitted(t *testing.T) {
+	ctx := utils.NewContext(context.Background())
+
+	arn := "arn:aws:iam::111111111111:role/ErrorRole"
+	attempts := 0
+	plugin := &mockPlugin{
+		name: "test-plugin",
+		scanFunc: func(gotArn string) (bool, error) {
+			assert.Equal(t, arn, gotArn)
+			attempts++
+			return false, fmt.Errorf("persistent AWS error")
+		},
+	}
+
+	results := scanWithPlugins(ctx, []plugins.Plugin{plugin}, []string{arn}, unlimitedBucket())
+
+	got := []Result{}
+	for r := range results {
+		got = append(got, r)
+	}
+
+	assert.Equal(t, maxScanAttempts, attempts)
+	assert.Empty(t, got, "persistent errors should not emit a false-negative result")
 }
 
 // TestScanWithPlugins_AllResultsReturned verifies every ARN produces a result
