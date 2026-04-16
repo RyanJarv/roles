@@ -21,6 +21,7 @@ type Opts struct {
 	Force        bool
 	Clean        bool
 	RateLimit    int
+	Json         bool
 }
 
 // LoadAllPlugins loads all enabled plugins.

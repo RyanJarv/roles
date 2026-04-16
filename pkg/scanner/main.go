@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const maxScanAttempts = 3
+
 type NewScannerInput struct {
 	Storage   *Storage
 	Plugins   [][]plugins.Plugin
@@ -145,8 +147,14 @@ func (s *Scanner) CleanUp(ctx *utils.Context) error {
 	return nil
 }
 
-func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns []string, rateLimitBucket chan int) chan Result {
-	queueSize := 10 * len(plugins)
+func scanWithPlugins(ctx *utils.Context, scanPlugins []plugins.Plugin, principalArns []string, rateLimitBucket chan int) chan Result {
+	queueSize := 10 * len(scanPlugins)
+	if queueSize == 0 {
+		queueSize = len(principalArns)
+	}
+	if queueSize == 0 {
+		queueSize = 1
+	}
 
 	ctx.Debug.Printf("queue size: %d", queueSize)
 
@@ -154,47 +162,67 @@ func scanWithPlugins(ctx *utils.Context, plugins []plugins.Plugin, principalArns
 	results := make(chan Result, queueSize)
 
 	processed := 0
+	attempts := map[string]int{}
+	attemptsMux := sync.Mutex{}
+	workWg := sync.WaitGroup{}
 
 	// Close the results channel when all plugins are done processing input.
-	wg := sync.WaitGroup{}
-	for _, plugin := range plugins {
-		wg.Add(1)
+	workerWg := sync.WaitGroup{}
+	for _, plugin := range scanPlugins {
+		workerWg.Add(1)
 
-		go func() {
+		go func(plugin plugins.Plugin) {
 			for principalArn := range input {
 				<-rateLimitBucket
-				if exists, err := plugin.ScanArn(ctx, principalArn); err != nil {
-					ctx.Error.Printf("%s: scanning: %s", plugin.Name(), err)
-				} else {
-					if exists {
-						ctx.Debug.Printf("found: %s", principalArn)
-					} else {
-						ctx.Debug.Printf("not found: %s", principalArn)
-					}
-					processed++
+				exists, err := plugin.ScanArn(ctx, principalArn)
+				if err != nil {
+					attemptsMux.Lock()
+					attempts[principalArn]++
+					attempt := attempts[principalArn]
+					attemptsMux.Unlock()
 
-					results <- Result{Arn: principalArn, Exists: exists}
+					if attempt < maxScanAttempts {
+						ctx.Error.Printf("%s: scanning %s: %s (retrying %d/%d)", plugin.Name(), principalArn, err, attempt+1, maxScanAttempts)
+						workWg.Add(1)
+						input <- principalArn
+					} else {
+						ctx.Error.Printf("%s: scanning %s: %s (giving up after %d attempts)", plugin.Name(), principalArn, err, attempt)
+					}
+					workWg.Done()
+					continue
 				}
+
+				if exists {
+					ctx.Debug.Printf("found: %s", principalArn)
+				} else {
+					ctx.Debug.Printf("not found: %s", principalArn)
+				}
+				processed++
+
+				results <- Result{Arn: principalArn, Exists: exists}
+				workWg.Done()
 			}
 			ctx.Debug.Printf("%s: finished processing input", plugin.Name())
 
-			wg.Done()
+			workerWg.Done()
 			ctx.Debug.Printf("%s: done", plugin.Name())
-		}()
+		}(plugin)
 	}
 
 	go func() {
 		statsCancel := LogStats(ctx, &processed)
+		defer statsCancel()
 
 		for _, principalArn := range principalArns {
+			workWg.Add(1)
 			input <- principalArn
 		}
 
+		workWg.Wait()
 		close(input)
 
-		wg.Wait() // Wait for all plugins to finish processing input.
+		workerWg.Wait()
 
-		statsCancel()
 		close(results)
 	}()
 	return results
