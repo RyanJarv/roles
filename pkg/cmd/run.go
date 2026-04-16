@@ -14,11 +14,13 @@ import (
 )
 
 type scanRecord struct {
-	Arn       string `json:"arn"`
-	AccountID string `json:"account_id"`
-	RoleName  string `json:"role_name"`
-	Exists    bool   `json:"exists"`
-	Comment   string `json:"comment"`
+	Arn           string `json:"arn"`
+	AccountID     string `json:"account_id"`
+	RoleName      string `json:"role_name"`
+	PrincipalName string `json:"principal_name"`
+	PrincipalType string `json:"principal_type"`
+	Exists        bool   `json:"exists"`
+	Comment       string `json:"comment"`
 }
 
 func Run(ctx *utils.Context, opts Opts) error {
@@ -55,10 +57,11 @@ func Run(ctx *utils.Context, opts Opts) error {
 	})
 
 	scanData, err := arn.GetArns(ctx, &arn.GetArnsInput{
-		AccountsStr:  opts.AccountsStr,
-		AccountsPath: opts.AccountsPath,
-		RolePaths:    strings.Split(opts.RolesPath, ","),
-		Regions:      utils.GetInputFromPath(regionsList),
+		AccountsStr:    opts.AccountsStr,
+		AccountsPath:   opts.AccountsPath,
+		RolePaths:      splitPaths(opts.RolesPath),
+		PrincipalPaths: splitPaths(opts.PrincipalsPath),
+		Regions:        utils.GetInputFromPath(regionsList),
 	})
 	if err != nil {
 		return fmt.Errorf("getting scanData: %s", err)
@@ -69,9 +72,12 @@ func Run(ctx *utils.Context, opts Opts) error {
 			rec := scanRecord{Arn: principalArn, Exists: exists}
 			if parsed, err := awsarn.Parse(principalArn); err == nil {
 				rec.AccountID = parsed.AccountID
-				if _, name, ok := strings.Cut(parsed.Resource, "/"); ok {
+				if kind, name, ok := strings.Cut(parsed.Resource, "/"); ok {
+					rec.PrincipalType = kind
+					rec.PrincipalName = name
 					rec.RoleName = name
 				} else {
+					rec.PrincipalName = parsed.Resource
 					rec.RoleName = parsed.Resource
 				}
 			}
@@ -93,4 +99,16 @@ func Run(ctx *utils.Context, opts Opts) error {
 	}
 
 	return nil
+}
+
+func splitPaths(value string) []string {
+	var result []string
+	for _, path := range strings.Split(value, ",") {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		result = append(result, path)
+	}
+	return result
 }

@@ -1,6 +1,6 @@
 # Roles
 
-Unauthenticated enumeration of AWS IAM Roles.
+Unauthenticated enumeration of AWS IAM principals.
 
 By default, this tool is rate limited to 10 roles/second, this can be increased up to 50 by passing the `-rate` flag.
 
@@ -10,11 +10,12 @@ By default, this tool is rate limited to 10 roles/second, this can be increased 
 make build
 ./build/darwin-arm/roles -profile scanner -setup
 ./build/darwin-arm/roles -profile scanner -account-list ./path/to/accounts.list -roles ~/path/to/role_names.list
+./build/darwin-arm/roles -profile scanner -account-list ./path/to/accounts.list -principals ~/path/to/principals.list
 ```
 
 ## Lists
 
-The account and role names lists are just plain lists with one value per line with an optional comment.
+The account and principal name lists are plain text files with one value per line and an optional comment.
 
 White space is trimmed from the beginning and end of the value before it is used.
 
@@ -30,6 +31,19 @@ For example:
 StaticRoleName # Default X role # Found at ...
 DynamicRoleName-{{.Region}}-{{.AccountId}} # Software A # Found at ...
 path/DynamicRoleName-{{.Region}}-{{.AccountId}} # Software B # Found at ...
+```
+
+### Principals List
+
+* The `-principals` flag accepts the same file and directory inputs as `-roles`.
+* Each entry must include the IAM principal prefix, for example `role/Admin` or `user/alice`.
+* Principal names can also use `{{.AccountId}}` and `{{.Region}}` templates.
+
+For example:
+
+```
+role/Admin # Static role
+user/deploy-{{.Region}} # Regional user
 ```
 
 ## Organization Setup
