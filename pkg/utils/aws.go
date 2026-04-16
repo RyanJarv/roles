@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/account"
@@ -102,22 +101,11 @@ func EnableAllRegions(ctx *Context, svc *account.Client) error {
 		}
 
 		for _, region := range resp.Regions {
-			for {
-				ctx.Info.Printf("Opting in to region %s", *region.RegionName)
-
-				var toManyReqs *types.TooManyRequestsException
-
-				if _, err := svc.EnableRegion(ctx, &account.EnableRegionInput{
-					RegionName: region.RegionName,
-				}); errors.As(err, &toManyReqs) {
-					ctx.Info.Printf("Too many requests, sleeping for 10 seconds")
-					time.Sleep(10 * time.Second)
-					continue
-				} else if err != nil {
-					return fmt.Errorf("enabling region %s: %s", *region.RegionName, err)
-				} else {
-					break
-				}
+			ctx.Info.Printf("Opting in to region %s", *region.RegionName)
+			if _, err := svc.EnableRegion(ctx, &account.EnableRegionInput{
+				RegionName: region.RegionName,
+			}); err != nil {
+				return fmt.Errorf("enabling region %s: %s", *region.RegionName, err)
 			}
 		}
 	}

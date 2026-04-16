@@ -13,6 +13,14 @@ import (
 	"strings"
 )
 
+type scanRecord struct {
+	Arn       string `json:"arn"`
+	AccountID string `json:"account_id"`
+	RoleName  string `json:"role_name"`
+	Exists    bool   `json:"exists"`
+	Comment   string `json:"comment"`
+}
+
 func Run(ctx *utils.Context, opts Opts) error {
 	cfg, err := config.LoadDefaultConfig(ctx.Context,
 		config.WithRegion("us-east-1"),
@@ -58,29 +66,22 @@ func Run(ctx *utils.Context, opts Opts) error {
 
 	for principalArn, exists := range scan.ScanArns(ctx, lo.Keys(scanData)) {
 		if opts.Json {
-			rec := struct {
-				Arn       string `json:"arn"`
-				AccountID string `json:"account_id"`
-				RoleName  string `json:"role_name"`
-				Exists    bool   `json:"exists"`
-				Comment   string `json:"comment"`
-			}{
-				Arn:    principalArn,
-				Exists: exists,
-			}
+			rec := scanRecord{Arn: principalArn, Exists: exists}
 			if parsed, err := awsarn.Parse(principalArn); err == nil {
 				rec.AccountID = parsed.AccountID
-				resource := parsed.Resource
-				if idx := strings.Index(resource, "/"); idx >= 0 {
-					rec.RoleName = resource[idx+1:]
+				if _, name, ok := strings.Cut(parsed.Resource, "/"); ok {
+					rec.RoleName = name
 				} else {
-					rec.RoleName = resource
+					rec.RoleName = parsed.Resource
 				}
 			}
 			if info, ok := scanData[principalArn]; ok {
 				rec.Comment = info.Comment
 			}
-			line, _ := json.Marshal(rec)
+			line, err := json.Marshal(rec)
+			if err != nil {
+				return fmt.Errorf("marshaling record for %s: %w", principalArn, err)
+			}
 			fmt.Println(string(line))
 		} else if exists {
 			fmt.Println(principalArn, "#", scanData[principalArn].Comment)

@@ -2,6 +2,8 @@ package scanner
 
 import (
 	"context"
+	"sync/atomic"
+
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/ryanjarv/roles/pkg/plugins"
 	"github.com/ryanjarv/roles/pkg/utils"
@@ -161,7 +163,7 @@ func scanWithPlugins(ctx *utils.Context, scanPlugins []plugins.Plugin, principal
 	input := make(chan string, queueSize)
 	results := make(chan Result, queueSize)
 
-	processed := 0
+	var processed int64
 	attempts := map[string]int{}
 	attemptsMux := sync.Mutex{}
 	workWg := sync.WaitGroup{}
@@ -183,8 +185,10 @@ func scanWithPlugins(ctx *utils.Context, scanPlugins []plugins.Plugin, principal
 
 					if attempt < maxScanAttempts {
 						ctx.Error.Printf("%s: scanning %s: %s (retrying %d/%d)", plugin.Name(), principalArn, err, attempt+1, maxScanAttempts)
-						workWg.Add(1)
-						input <- principalArn
+						// Must be a goroutine: if all workers are retrying and the input buffer is full,
+					// a direct send blocks forever since no worker can drain input while blocked.
+					workWg.Add(1)
+					go func() { input <- principalArn }()
 					} else {
 						ctx.Error.Printf("%s: scanning %s: %s (giving up after %d attempts)", plugin.Name(), principalArn, err, attempt)
 					}
@@ -197,7 +201,7 @@ func scanWithPlugins(ctx *utils.Context, scanPlugins []plugins.Plugin, principal
 				} else {
 					ctx.Debug.Printf("not found: %s", principalArn)
 				}
-				processed++
+				atomic.AddInt64(&processed, 1)
 
 				results <- Result{Arn: principalArn, Exists: exists}
 				workWg.Done()
@@ -229,7 +233,7 @@ func scanWithPlugins(ctx *utils.Context, scanPlugins []plugins.Plugin, principal
 }
 
 // LogStats logs stats every 5 seconds until the context is done.
-func LogStats(ctx *utils.Context, processed *int) context.CancelFunc {
+func LogStats(ctx *utils.Context, processed *int64) context.CancelFunc {
 	start := time.Now()
 
 	ctx, cancelFunc := ctx.WithCancel()
@@ -240,9 +244,10 @@ func LogStats(ctx *utils.Context, processed *int) context.CancelFunc {
 			case <-ctx.Done():
 				break
 			case <-time.After(5 * time.Second):
+				n := atomic.LoadInt64(processed)
 				elapsed := time.Now().Sub(start)
-				perSecond := float64(*processed) / elapsed.Seconds()
-				ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", *processed, elapsed.Seconds(), perSecond)
+				perSecond := float64(n) / elapsed.Seconds()
+				ctx.Info.Printf("processed %d in %.1f seconds: %.1f/second", n, elapsed.Seconds(), perSecond)
 			}
 		}
 	}()

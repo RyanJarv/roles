@@ -68,6 +68,152 @@ However, a few things worth noting here:
 * This was an unoptimized test.
 * Depending on how rate limiting works, these rates may not be representative of a longer run.
 
+## IAM Permissions
+
+The scanner needs different permissions depending on the operation. Below are example IAM policies for each mode.
+
+### Scanning (normal run)
+
+This is the minimum policy needed for a regular scan (after setup has already been run once). If you're not using AWS Organizations, you can omit the `organizations:` and `sts:AssumeRole` permissions — the tool gracefully falls back to single-account mode.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Scan",
+            "Effect": "Allow",
+            "Action": [
+                "sts:GetCallerIdentity",
+                "account:ListRegions",
+                "sns:SetTopicAttributes",
+                "sqs:SetQueueAttributes",
+                "s3:PutBucketPolicy",
+                "s3:PutAccessPointPolicy",
+                "ecr-public:SetRepositoryPolicy"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "OrgDiscovery",
+            "Effect": "Allow",
+            "Action": [
+                "organizations:ListAccounts",
+                "organizations:ListTagsForResource",
+                "sts:AssumeRole"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+### Setup (`-setup`)
+
+One-time resource creation. Includes all scanning permissions plus the ability to create the probe resources each plugin uses.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "ScanAndSetup",
+            "Effect": "Allow",
+            "Action": [
+                "sts:GetCallerIdentity",
+                "account:ListRegions",
+                "sns:CreateTopic",
+                "sns:SetTopicAttributes",
+                "sqs:CreateQueue",
+                "sqs:SetQueueAttributes",
+                "s3:CreateBucket",
+                "s3:PutBucketPolicy",
+                "s3:CreateAccessPoint",
+                "s3:GetAccessPoint",
+                "s3:PutAccessPointPolicy",
+                "ecr-public:CreateRepository",
+                "ecr-public:SetRepositoryPolicy"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "OrgDiscovery",
+            "Effect": "Allow",
+            "Action": [
+                "organizations:ListAccounts",
+                "organizations:ListTagsForResource",
+                "sts:AssumeRole"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+### Cleanup (`-clean`)
+
+Tear down all probe resources created during setup.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Cleanup",
+            "Effect": "Allow",
+            "Action": [
+                "sts:GetCallerIdentity",
+                "account:ListRegions",
+                "sns:DeleteTopic",
+                "sqs:DeleteQueue",
+                "s3:DeleteBucketPolicy",
+                "s3:DeleteBucket",
+                "s3:ListAccessPoints",
+                "s3:DeleteAccessPoint",
+                "ecr-public:DeleteRepository"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "OrgDiscovery",
+            "Effect": "Allow",
+            "Action": [
+                "organizations:ListAccounts",
+                "organizations:ListTagsForResource",
+                "sts:AssumeRole"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+### Organization Setup (`-setup -org`)
+
+Only needed if you're using the optional multi-account org mode. This is in addition to the setup permissions above.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "OrgSetup",
+            "Effect": "Allow",
+            "Action": [
+                "organizations:CreateOrganization",
+                "organizations:DescribeOrganization",
+                "organizations:CreateAccount",
+                "organizations:DescribeCreateAccountStatus",
+                "account:EnableRegion"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+**Note:** The S3 access point permissions use the `s3:` prefix (not `s3control:`). AWS maps the S3 Control API actions to `s3:` IAM action names. Similarly, ECR Public actions use the `ecr-public:` prefix.
+
 ## Build
 
 ```
