@@ -185,8 +185,10 @@ func scanWithPlugins(ctx *utils.Context, scanPlugins []plugins.Plugin, principal
 
 					if attempt < maxScanAttempts {
 						ctx.Error.Printf("%s: scanning %s: %s (retrying %d/%d)", plugin.Name(), principalArn, err, attempt+1, maxScanAttempts)
-						workWg.Add(1)
-						go func() { input <- principalArn }()
+						// Must be a goroutine: if all workers are retrying and the input buffer is full,
+					// a direct send blocks forever since no worker can drain input while blocked.
+					workWg.Add(1)
+					go func() { input <- principalArn }()
 					} else {
 						ctx.Error.Printf("%s: scanning %s: %s (giving up after %d attempts)", plugin.Name(), principalArn, err, attempt)
 					}
