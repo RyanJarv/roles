@@ -42,22 +42,6 @@ func Setup(ctx *utils.Context, profile string, org bool) error {
 }
 
 func SetupAccounts(ctx *utils.Context, accounts map[string]utils.Account, cfg aws.Config, err error) error {
-	wg := sync.WaitGroup{}
-
-	// Run setup for each account
-	for _, v := range accounts {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := utils.EnableAllRegions(ctx, v.Svc.Account); err != nil {
-				ctx.Error.Printf("enabling all regions: %s", err)
-			}
-		}()
-	}
-
-	wg.Wait()
-	ctx.Info.Printf("Enabling all regions, this can take a while...")
-
 	cfgs, err := utils.LoadConfigs(ctx, accounts)
 	if err != nil {
 		return fmt.Errorf("loading configs: %s", err)
