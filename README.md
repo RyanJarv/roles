@@ -88,7 +88,7 @@ The scanner needs different permissions depending on the operation. Below are ex
 
 ### Scanning (normal run)
 
-This is the minimum policy needed for a regular scan (after setup has already been run once). If you're not using AWS Organizations, you can omit the `organizations:` and `sts:AssumeRole` permissions — the tool gracefully falls back to single-account mode.
+This is the minimum policy needed for a regular scan (after setup has already been run once).
 
 ```json
 {
@@ -105,16 +105,6 @@ This is the minimum policy needed for a regular scan (after setup has already be
                 "s3:PutBucketPolicy",
                 "s3:PutAccessPointPolicy",
                 "ecr-public:SetRepositoryPolicy"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "OrgDiscovery",
-            "Effect": "Allow",
-            "Action": [
-                "organizations:ListAccounts",
-                "organizations:ListTagsForResource",
-                "sts:AssumeRole"
             ],
             "Resource": "*"
         }
@@ -149,16 +139,6 @@ One-time resource creation. Includes all scanning permissions plus the ability t
                 "ecr-public:SetRepositoryPolicy"
             ],
             "Resource": "*"
-        },
-        {
-            "Sid": "OrgDiscovery",
-            "Effect": "Allow",
-            "Action": [
-                "organizations:ListAccounts",
-                "organizations:ListTagsForResource",
-                "sts:AssumeRole"
-            ],
-            "Resource": "*"
         }
     ]
 }
@@ -185,40 +165,6 @@ Tear down all probe resources created during setup.
                 "s3:ListAccessPoints",
                 "s3:DeleteAccessPoint",
                 "ecr-public:DeleteRepository"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Sid": "OrgDiscovery",
-            "Effect": "Allow",
-            "Action": [
-                "organizations:ListAccounts",
-                "organizations:ListTagsForResource",
-                "sts:AssumeRole"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-```
-
-### Organization Setup (`-setup -org`)
-
-Only needed if you're using the optional multi-account org mode. This is in addition to the setup permissions above.
-
-```json
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "OrgSetup",
-            "Effect": "Allow",
-            "Action": [
-                "organizations:CreateOrganization",
-                "organizations:DescribeOrganization",
-                "organizations:CreateAccount",
-                "organizations:DescribeCreateAccountStatus",
-                "account:EnableRegion"
             ],
             "Resource": "*"
         }
