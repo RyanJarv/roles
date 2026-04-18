@@ -22,6 +22,7 @@ func main() {
 	flag.StringVar(&opts.Profile, "profile", "", "AWS profile to use for scanning")
 	flag.StringVar(&opts.Name, "name", "default", "Name of the scan")
 	flag.StringVar(&opts.RolesPath, "roles", "", "Additional role names")
+	flag.StringVar(&opts.PrincipalsPath, "principals", "", "Additional principal names prefixed with role/ or user/")
 	flag.StringVar(&opts.AccountsPath, "account-list", "", "Path to a file containing account IDs")
 	flag.StringVar(&opts.AccountsStr, "accounts", "", "Path to a file containing account IDs")
 	flag.BoolVar(&opts.Force, "force", false, "Force rescan")

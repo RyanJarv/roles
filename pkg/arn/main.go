@@ -9,11 +9,12 @@ import (
 )
 
 type GetArnsInput struct {
-	RolePaths    []string
-	Regions      map[string]utils.Info
-	ForceScan    bool
-	AccountsStr  string
-	AccountsPath string
+	RolePaths      []string
+	PrincipalPaths []string
+	Regions        map[string]utils.Info
+	ForceScan      bool
+	AccountsStr    string
+	AccountsPath   string
 }
 
 func GetArns(ctx *utils.Context, input *GetArnsInput) (map[string]utils.Info, error) {
@@ -37,9 +38,18 @@ func GetArns(ctx *utils.Context, input *GetArnsInput) (map[string]utils.Info, er
 		accounts[value] = utils.Info{}
 	}
 
-	roles, err := utils.GetInput(input.RolePaths...)
+	roles, err := getRoleInputs(input.RolePaths)
 	if err != nil {
 		return nil, fmt.Errorf("getting allRoles: %s", err)
+	}
+
+	principals, err := getPrincipalInputs(input.PrincipalPaths)
+	if err != nil {
+		return nil, fmt.Errorf("getting allPrincipals: %s", err)
+	}
+
+	for name, info := range principals {
+		roles[name] = info
 	}
 
 	result := map[string]utils.Info{}
@@ -74,15 +84,44 @@ type roleData struct {
 	Region    string
 }
 
+func getRoleInputs(paths []string) (map[string]utils.Info, error) {
+	roles, err := utils.GetInput(paths...)
+	if err != nil {
+		return nil, err
+	}
+
+	result := map[string]utils.Info{}
+	for role, info := range roles {
+		result["role/"+role] = info
+	}
+
+	return result, nil
+}
+
+func getPrincipalInputs(paths []string) (map[string]utils.Info, error) {
+	principals, err := utils.GetInput(paths...)
+	if err != nil {
+		return nil, err
+	}
+
+	for principal := range principals {
+		if !strings.HasPrefix(principal, "role/") && !strings.HasPrefix(principal, "user/") {
+			return nil, fmt.Errorf("principal %q must start with role/ or user/", principal)
+		}
+	}
+
+	return principals, nil
+}
+
 // GetArn returns a list of ARNs based on the given template, account, and region
 //
 // Example:
 //
-//	cdk-hnb659fds-deploy-role-{{AccountId}}-{{region}}" -> [
+//	role/cdk-hnb659fds-deploy-role-{{AccountId}}-{{region}}" -> [
 //			"arn:aws:iam::123456789012:role/cdk-hnb659fds-deploy-role-123456789012-us-west-2"
 //	]
-func GetArn(role string, account string, region string) (string, error) {
-	tmpl, err := template.New(role).Parse(role)
+func GetArn(principal string, account string, region string) (string, error) {
+	tmpl, err := template.New(principal).Parse(principal)
 	if err != nil {
 		return "", err
 	}
@@ -94,5 +133,5 @@ func GetArn(role string, account string, region string) (string, error) {
 
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, data)
-	return fmt.Sprintf("arn:aws:iam::%s:role/%s", account, buf.String()), err
+	return fmt.Sprintf("arn:aws:iam::%s:%s", account, buf.String()), err
 }

@@ -10,18 +10,19 @@ import (
 var regionsList string
 
 type Opts struct {
-	Debug        bool
-	Setup        bool
-	Org          bool
-	Profile      string
-	Name         string
-	RolesPath    string
-	AccountsPath string
-	AccountsStr  string
-	Force        bool
-	Clean        bool
-	RateLimit    int
-	Json         bool
+	Debug          bool
+	Setup          bool
+	Org            bool
+	Profile        string
+	Name           string
+	RolesPath      string
+	PrincipalsPath string
+	AccountsPath   string
+	AccountsStr    string
+	Force          bool
+	Clean          bool
+	RateLimit      int
+	Json           bool
 }
 
 // LoadAllPlugins loads all enabled plugins.
